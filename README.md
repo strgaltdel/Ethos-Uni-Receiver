@@ -8,11 +8,11 @@ Feb 2023
 
 
 
-uniActi  activate receiver firmware
+uniActi:  activate receiver firmware
 
-uniSet   configure parameters
+uniSet:  configure parameters
 
-unistat  show statistics widget
+unistat:  show statistics widget
 
 
 
