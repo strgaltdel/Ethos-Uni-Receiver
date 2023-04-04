@@ -33,7 +33,7 @@
 		0.8 		220405	roll out, no RxReset, no CRates due to missing bit32 lib
 		1.0 RC1 	220410	added multiLang & intro, channel reset, bugfixing
 		1.1 		221020	added Rx4R/Rx6R		
-		1.2		221107	SPort timing
+		1.2			221107	SPort timing
 		1.3 		230217	masking Tuning Offset 
 *************************************************************************************  								]]
 
