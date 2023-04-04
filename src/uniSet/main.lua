@@ -81,7 +81,8 @@ local HEADER3 <const> 		=28
 local HEADER4 <const> 		=29
 local HEADER5 <const> 		=30
 local HEADER6 <const> 		=31
-local PAGESTRG <const>	="Seite"
+
+
 
 local frame = {}							-- Sport frame data items
 local chMap = {}							-- chsannel map
@@ -105,12 +106,15 @@ local SPLASHTIME <const>  = 2
 
 local txtFields,optionLan,header = dofile("lang.lua")		-- get language file
  
+local PAGESTRG
 local locale = system.getLocale()
 	if locale =="de" then
 		lan = 1
+		PAGESTRG 	="Seite"
 --  elseif locale == "fr" then lan = 3		-- to be expanded
 	else
-		lan = 2 							-- not supported language, so has to be "en" 
+		lan = 2 							-- not supported language, so has to be "en"
+	PAGESTRG 	="Page"		
 	end
 	
 
