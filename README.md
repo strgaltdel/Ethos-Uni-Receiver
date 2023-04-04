@@ -5,7 +5,9 @@ Feb 2023
 
 
 uniActi  activate receiver firmware
+
 uniSet   configure parameters
+
 unistat  show statistics widget
 
 
