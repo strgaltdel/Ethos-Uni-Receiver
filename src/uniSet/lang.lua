@@ -9,7 +9,7 @@ local txt_Fields = {
 {"CH1-8 / CH9-16",				"CH1-8 / CH9-16"			}, -- 1
 {"dummy SBUS-ch8",				"dummy SBUS-ch8"			}, -- 2
 {"Servo am SBUS",				"Servo on SBUS"				}, -- 3
-{"dummy D8 only",				"dummy D8 only"				}, -- 4
+{"Ermoglichen CPPM",			"Enable CPPM"				}, -- 4
 {"Feinabgleich: Offset", 		"Tuning offset"				}, -- 5
 {"Abgleich Mittenfrequenz",		"Tuning enabled"			}, -- 6
 {"Servo Framerate", 			"Rate"						}, -- 7
@@ -30,7 +30,9 @@ local txt_Fields = {
 {"Rx Typ", 						"Rx Type"					}, --22
 {"Antenne0 (Anzahl)", 			"Antenna count[0]"			}, --23
 {"Antenne1 (Anzahl)", 			"Antenna count[1]"			}, --24
-{"Rx Reset",					"Rx Reset"					}  --25
+{"Rx Reset",					"Rx Reset"					}, --25
+{"Seite",						"Page"						}, --26
+{"Warten auf Rx",				"Waiting for Rx"			}  --27
 }
 
 

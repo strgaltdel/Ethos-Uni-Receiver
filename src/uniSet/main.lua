@@ -65,6 +65,7 @@ local MAPSbusLine <const> 	= 7				-- hardcoded, Formline  MapOnSbus , has to be 
 
 local CH1_8CH9_16 <const> 	= 1
 local PWM_on_SBUS <const> 	= 3
+local CPPM_enable <const> 	= 4
 local Tune_Offset <const> 	= 5
 local Tune_enable <const> 	= 6
 local Puls_Rate <const> 		= 7
@@ -106,20 +107,16 @@ local SPLASHTIME <const>  = 2
 
 local txtFields,optionLan,header = dofile("lang.lua")		-- get language file
  
-local PAGESTRG
 local locale = system.getLocale()
 	if locale =="de" then
 		lan = 1
-		PAGESTRG 	="Seite"
 --  elseif locale == "fr" then lan = 3		-- to be expanded
 	else
 		lan = 2 							-- not supported language, so has to be "en"
-	PAGESTRG 	="Page"		
 	end
 	
-
-
-
+local PAGESTRG <const>		=txtFields[26][lan]
+local waitRx <const>		=txtFields[27][lan]
 	
 
 -- "core" array / list of sport items 
@@ -132,10 +129,10 @@ local RxField = {
 	{name=txtFields[1][lan], 		d_item=0x00E0,	kind="Choice",	write_=1,			options={{"1-8", 0}, {"9-16", 1}},			value=nil,	default=0			,SPortdefault=0x00E0	,formVal=nil,	disable=false,	index = CH1_8CH9_16	},			--  1 upper/lower channels on servo outputs; 1=9-16
 	{name=txtFields[2][lan], 		d_item=0x00E1,	kind="Choice",	write_=1,			options=nil,								value=nil,	default="obsolet"	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 2			},			--  2 dummy
 	{name=txtFields[3][lan], 		d_item=0x00E2,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x00E2	,formVal=nil,	disable=false,	index = PWM_on_SBUS	},			--  3 sbus Out = additional pwm channel; 1=enabled	
-	{name=txtFields[4][lan], 		d_item=0x00E3,	kind="Choice",	write_=1,			options=nil,								value=nil,	default="obsolet"	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 4			},			--  4 dummy
+	{name=txtFields[4][lan], 		d_item=0x00E3,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x00E3	,formVal=nil,	disable=false,	index = CPPM_enable	},			--  4 CPPM enabled used on X4R/X4R-SB 0=disabled 1=enabled
 	{name=txtFields[5][lan], 		d_item=0x00E4,	kind="Number",	write_=0,			minimum=-200, maximum=200,					value=nil,	default=20			,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = Tune_Offset	},			--  5 tuning offset  -127..+127	
 	{name=txtFields[6][lan], 		d_item=0x00E5,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x01E5	,formVal=nil,	disable=false,	index = Tune_enable	},			--  6 tuning enabled 1=enabled	
-	{name=txtFields[7][lan], 		d_item=0x00E6,	kind="Choice",	write_=1,			options={{"9ms", 0}, {"18ms", 1}},			value=nil,	default=0			,SPortdefault=0x00E6	,formVal=nil,	disable=false,	index = Puls_Rate	},			--  7 servo pulse period 1=9ms
+	{name=txtFields[7][lan], 		d_item=0x00E6,	kind="Choice",	write_=1,			options={{"18mS", 0}, {"9mS", 1}},			value=nil,	default=0			,SPortdefault=0x00E6	,formVal=nil,	disable=false,	index = Puls_Rate	},			--  7 servo pulse period 1=9ms
 	{name=txtFields[8][lan], 		d_item=0x00E7,	kind="Choice",	write_=1,			options=nil,								value=nil,	default="obsolet"	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 8			},			--  8 servo pulse period 1=9ms	on dedicated servo outputs bit0=Ch1
 	{name=txtFields[9][lan], 		d_item=0x00E8,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x00E8	,formVal=nil,	disable=true,	index = MAPonPWM	},			--  9 bit0: servo output enabled;  bit1: SBus output enabled
 	{name=txtFields[10][lan], 		d_item=0x00E8,	kind="Boolean",	write_=MAPonPWM,	options=optionLan[1][lan],					value=nil,	default=false		,SPortdefault=0x00E8	,formVal=nil,	disable=false,	index = MAPonSBUS	},
@@ -152,8 +149,8 @@ local RxField = {
 	{name="Antenna swaps",				d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=8	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 18			},			-- 18 data 5	
 	{name="Telemetry not sent (times)",	d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=9	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 19			},			-- 19 data 6
 	{name="Software Rev", 				d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=10	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 20			},			-- 20 data 7
-	{name=txtFields[21][lan], 			d_item=0x08FF,	kind="Choice",	write_=0,	options={{"V1 FC", 0}, {"V1 EU", 1}, {"V2 FC", 2}, {"V2 EU"	, 3}},	value=nil,	default=1	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = RxProtocol	},			-- 21 data 8
-	{name=txtFields[22][lan], 			d_item=0x09FF,	kind="Choice",	write_=0,	options={{"D8", 1}, {"X8R/X6R", 2}, {"X4R", 3}, {"Rx8Rpro", 4}, {"Rx8R", 5}, {"Rx4R/Rx6r", 6}		},	value=nil,SPortdefault=0x00FF	,	default=1	,formVal=nil,	disable=false,	index = RxType		},			-- 22 data 9
+	{name=txtFields[21][lan], 			d_item=0x08FF,	kind="Choice",	write_=0,	options={{"V1 FCC", 0}, {"V1 EU", 1}, {"V2 FCC", 2}, {"V2 EU"	, 3}},	value=nil,	default=1	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = RxProtocol	},			-- 21 data 8
+	{name=txtFields[22][lan], 			d_item=0x09FF,	kind="Choice",	write_=0,	options={{waitRx, 0}, {"D8R/D4R", 1}, {"X8R/X6R", 2}, {"X4R/X4R-SB", 3}, {"RX8R-PRO", 4}, {"RX8R", 5}, {"RX4R/6R G-RX6/8", 6}, {"XSR", 7}},	value=nil,	default=0	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = RxType		},			-- 22 data 9
 	{name="Antenna count[0]", 			d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=13	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 23			},			-- 23 data10
 	{name="Antenna count[1]", 			d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 24			},			-- 24 data11
 	
@@ -174,6 +171,7 @@ local RxField = {
 local Rx_Reset = {
 	CH1_8CH9_16,
 	PWM_on_SBUS,
+	CPPM_enable,
 	Tune_enable,
 	Puls_Rate,
 	MAPonPWM,
@@ -191,9 +189,9 @@ formPage[1] =							-- form page1
 {
 	
   {pointer =	HEADER1},	
-  {pointer =	RxField[RxType].index		},		-- 1 Stat9Read / RxType
-  {pointer =	RxField[RxProtocol].index	},		-- 2 Tx protocol auto detect
-  {pointer =	RxField[CH1_8CH9_16].index	},		-- 6 Chans9_16
+  {pointer =	RxField[RxType].index		},		--22 Stat9Read / RxType
+  {pointer =	RxField[RxProtocol].index	},		--21 Tx protocol auto detect
+  {pointer =	RxField[CH1_8CH9_16].index	},		-- 1 Chans9_16
   {pointer =	RxField[Puls_Rate].index	},	 	-- 7 Puls_Rate
   {pointer =	RxField[MAPonPWM].index		},		-- 9 Map on PWM	; should be on 1st page to determine #pages
  {pointer =	RxField[MAPonSBUS].index	}		--10 Map on SBUS 
@@ -207,15 +205,16 @@ formPage[2] =							-- form page2
   {pointer =	HEADER2},	
   {pointer =	RxField[SBusNotInvert].index	},		--12 SBUS Inv
   {pointer =	RxField[PWM_on_SBUS].index	},			-- 3 Sbus4Value
-  {pointer =	RxField[Tune_enable].index	},			-- 4 TuneOffset
-  {pointer =	RxField[Tune_Offset].index	},  		-- 5 TuneValue 																					--   read Rx manually
+  {pointer =	RxField[Tune_enable].index	},			-- 6 Enable Tune
+  {pointer =	RxField[Tune_Offset].index	},  		-- 5 TuneOffsetValue 																			--   read Rx manually
+  {pointer =	RxField[CPPM_enable].index	},			-- 4 Enable CPPM
   {pointer =	RxField[RxReset].index}	  				--25 Button Reset																	--   flash RX
   }
 
   
 formPage[3] =							-- form page3
 {  
- -- {"                                  Kanalzuordnung 1",	"TextOnly","PAGE 3/6"},
+ -- {"                                  Channel assignment 1",	"TextOnly","PAGE 3/6"},
 								--			value, default
   {pointer =	HEADER3},	
   {pointer =	RxField[CHAN_Mapping].index, chNum = 1	},						 											--11 channel 1 mapping
@@ -227,7 +226,7 @@ formPage[3] =							-- form page3
   
 formPage[4] =							-- form page4
 { 
---  {"                                  Kanalzuordnung 2",	"TextOnly","(4/6)"},
+--  {"                                  Channel assignment 2",	"TextOnly","(4/6)"},
   {pointer =	HEADER4},	
   {pointer =	RxField[CHAN_Mapping].index, chNum = 5	},						 											--11 channel 1 mapping
   {pointer =	RxField[CHAN_Mapping].index, chNum = 6	},						
@@ -237,7 +236,7 @@ formPage[4] =							-- form page4
   
 formPage[5] =							-- form page5
 { 
---{"                                  Kanalzuordnung 3",	"TextOnly","(5/6)"},
+--{"                                  Channel assignment 3",	"TextOnly","(5/6)"},
   {pointer =	HEADER5},	
   {pointer =	RxField[CHAN_Mapping].index, chNum = 9	},						 											--11 channel 1 mapping
   {pointer =	RxField[CHAN_Mapping].index, chNum = 10	},						
@@ -247,7 +246,7 @@ formPage[5] =							-- form page5
   
 formPage[6] =							-- form page6
 { 
-  --{"                                  Kanalzuordnung 4",	"TextOnly","(6/6)"},  
+  --{"                                  Channel assignment 4",	"TextOnly","(6/6)"},
     {pointer =	HEADER6},	
   {pointer =	RxField[CHAN_Mapping].index, chNum = 13	},						 											--11 channel 1 mapping
   {pointer =	RxField[CHAN_Mapping].index, chNum = 14	},						
@@ -343,7 +342,7 @@ local result
 				result = RxField[rxIndex].formVal
 
 				
-	elseif rxIndex == PWM_on_SBUS  or rxIndex == Tune_enable then															-- simple boolean handling
+	elseif rxIndex == PWM_on_SBUS  or rxIndex == Tune_enable or rxIndex == CPPM_enable then															-- simple boolean handling
 				value = math.floor(value / 256)	
 				RxField[rxIndex].value = bitband_FF(value)
 				if RxField[rxIndex].value > 0 then
@@ -428,6 +427,9 @@ local function rxIndex(parameter)
 		
 	elseif parameter[1] == txtFields[ MAPonSBUS][lan] then
 		rxPointer = MAPonSBUS
+
+	elseif parameter[1] == txtFields[CPPM_enable][lan] then
+		rxPointer = CPPM_enable
 
 	elseif parameter[1] == txtFields[SBusNotInvert][lan] then
 		rxPointer = SBusNotInvert
@@ -602,6 +604,14 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 			modifications[1] = {parameter[3], newValue}	
 			if debug5 then print ("set ServoOnSbus detected",string.format("%x",newValue)) end
 
+		elseif rxPointer == CPPM_enable then
+			if value == false then
+				newValue = 0x00E3
+			else
+				newValue = 0x01E3
+			end
+			modifications[1] = {parameter[3], newValue}
+			if debug5 then print ("set Enable CPPM detected",string.format("%x",newValue)) end
 			
 		elseif rxPointer == Tune_enable then
 			if value == false then
