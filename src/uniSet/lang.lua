@@ -1,6 +1,6 @@
 -- language file for Uniaccst Rx settings
 -- udo nowakowski
--- 8.april.2022
+-- 17.Jan.2024
 
 local txt_Fields = {
 
@@ -30,8 +30,20 @@ local txt_Fields = {
 {"Rx Typ", 						"Rx Type"					}, --22
 {"Antenne0 (Anzahl)", 			"Antenna count[0]"			}, --23
 {"Antenne1 (Anzahl)", 			"Antenna count[1]"			}, --24
-{"Rx Reset",					"Rx Reset"					}  --25
+{"Rx Reset",					"Rx Reset"					}, --25
+--addon Rev1.4
+{"FBus auf S.Port", 			"FBus active"			    },	--26
+{"Rx Info", 		            "Rx Info"			        },	--27
+{"CPPM", 		           		"CPPM"			      		},	--28
+{"CPPM", 		            	"CPPM"			        	},	--29 (D8)
+{"S.Port aktiv", 		        "S.Port enable"			    },	--30
+{"SBus Kanal 4", 		        "SBus ch 4"			        },	--31
+{"SBus Kanal 8", 		        "SBus ch 8"			        },	--32
 }
+
+
+
+
 
 
 local optionLan = {

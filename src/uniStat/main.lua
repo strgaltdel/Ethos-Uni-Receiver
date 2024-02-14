@@ -1,19 +1,20 @@
 --[[
 ###################################################################################
-#######															#######
-#######		    					"UNIstat" 						#######
+#######																		#######
+#######		    					"UNIstat" 								#######
 #######	  		an ETHOS lua widget to monitor UNI-ACCST Receivers			#######
-#######															#######
+#######																		#######
 #######	    		a Rx Firmware Project mainly driven by					#######
 #######			 Mike Blandfort, Engel Modellbau and Aloft Hobby			#######
 #######		   thanks to all who gave valuable information & inputs 		#######
-#######															#######
-#######															#######
-#######															#######
-#######	 Rev 1.1 RC1	20 Oct 2022 (changed X4r..)						#######
+#######																		#######
+#######																		#######
+#######																		#######
+#######  Rev 1.4		28 Jan 2024 some receiver added						#######
 #######	 Rev 1.2		01 Nov 2022 (changed timing, X4r..)					#######
-#######	 														#######
-#######	 coded by Udo Nowakowski										#######
+#######	 Rev 1.1 RC1	20 Oct 2022 (changed X4r..)							#######
+#######	 																	#######
+#######	 coded by Udo Nowakowski											#######
 ###################################################################################
 
 		This program is free software: you can redistribute it and/or modify
@@ -29,9 +30,10 @@
 		You should have received a copy of the GNU General Public License
 		along with this program.  If not, see <https://www.gnu.org/licenses/>.
 		
-		Rev 1.0 RC1 		220510	first release candidate
+		Rev 1.0 RC1 	220510	first release candidate
 		Rev 1.1 RC1		221020	(changed SPORT timing, X4r..)	
-		Rev 1.2 			221104	more conservative timing
+		Rev 1.2 		221104	more conservative timing
+		Rev 1.4			240128	added  XSR , RXSR
 *************************************************************************************  							
 ]]
 
@@ -53,7 +55,7 @@ local lan																			-- determine language
     lan = 2 																		-- not supported language, so has to be "en" 
   end
 
-local translations = {de="UNI-Rx Statistik 1.2", en="UNI-Rx Statistics 1.2"}		-- header list
+local translations = {de="UNI-Rx Statistik 1.4", en="UNI-Rx Statistics 1.4"}		-- header list
 local	txtFields,optionLan,header = dofile("lang.lua")								-- get language file
 
 
@@ -363,7 +365,7 @@ local function create()
 		{name=txtFields[19][lan],	d_item=0x06FF,	kind="Number",	SPortdefault=0x00FF	,config=false,	index = 7			},			-- 19 data 6
 		{name=txtFields[20][lan], 	d_item=0x07FF,	kind="Number",	SPortdefault=0x00FF	,config=true,	index = 8			},			-- 20 data 7
 		{name=txtFields[21][lan], 	d_item=0x08FF,	kind="Choice",	options={{"V1 FC", 0}, {"V1 EU", 1}, {"V2 FC", 2}, {"V2 EU"	, 3}},											SPortdefault=0x00FF	,config=nil,	index = 9	},			-- 21 data 8
-		{name=txtFields[22][lan], 	d_item=0x09FF,	kind="Choice",	options={{"D8", 1}, {"X8R/X6R", 2}, {"X4R", 3}, {"Rx8Rpro", 4}, {"Rx8R", 5}, {"Rx4R/Rx6R", 6}		},	SPortdefault=0x00FF	,config=nil,	index = 10		},			-- 22 data 9
+		{name=txtFields[22][lan], 	d_item=0x09FF,	kind="Choice",	options={{"D8", 1}, {"X8R/X6R", 2}, {"X4R", 3}, {"Rx8Rpro", 4}, {"Rx8R", 5}, {"Rx4R/Rx6R", 6,{"XSR", 7}, {"R-XSR", 8}}		},	SPortdefault=0x00FF	,config=nil,	index = 10		},			-- 22 data 9
 		{name=txtFields[23][lan], 	d_item=0x0AFF,	kind="Number",	SPortdefault=0x00FF	,config=false,	disable=false,	index = 11			},			-- 23 data10
 		{name=txtFields[24][lan], 	d_item=0x0BFF,	kind="Number",	SPortdefault=0x00FF	,config=false,	disable=false,	index = 12			},			-- 24 data11
 	}

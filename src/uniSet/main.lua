@@ -1,20 +1,18 @@
---	local tmp = bit32.bor(0x01E1,0xE1)		-- check bit32  lib
-
 --[[
 ###################################################################################
-#######														#######
-#######		    					"UNIset" 						#######
-#######	  		an ETHOS lua tool to configure UNI-ACCST Receivers		#######
-#######														#######
-#######	    		a Rx Firmware Project mainly driven by				#######
-#######			 Mike Blandfort, Engel Modellbau and Aloft Hobby		#######
+#######																		#######
+#######		    					"UNIset" 								#######
+#######	  		an ETHOS lua tool to configure UNI-ACCST Receivers			#######
+#######																		#######
+#######	    		a Rx Firmware Project mainly driven by					#######
+#######			 Mike Blandfort, Engel Modellbau and Aloft Hobby			#######
 #######		   thanks to all who gave valuable information & inputs 		#######
-#######														#######
-#######														#######
-#######														#######
-#######	 Rev 1.3												#######
-#######	 Feb 2023												#######
-#######	 coded by Udo Nowakowski									#######
+#######																		#######
+#######																		#######
+#######																		#######
+#######	 Rev 1.4	beta 1.4												#######
+#######	 09 Feb 2024														#######
+#######	 coded by Udo Nowakowski											#######
 ###################################################################################
 
 		This program is free software: you can redistribute it and/or modify
@@ -35,9 +33,41 @@
 		1.1 		221020	added Rx4R/Rx6R		
 		1.2			221107	SPort timing
 		1.3 		230217	masking Tuning Offset 
-*************************************************************************************  								]]
+		
+		1.4	beta1.2		240128	add settings for: fbus, cppm, D8cppm sbusC4, sbusC8, sportEnable ; 
+							new Receiver detection G-Rx6/8 , XSR , R-XSR
+							functional matrix (which rx supports which item)
+							"dynamic" calculation of Page2
+							some finetuning
 
-local translations = {en="UNIset 1.3"}
+							clean debug code
+			beta 1.3    resolve paging bug
+			beta 1.4 	resolve "no d8 sbus uninvert" parameter , no foo-fighter  on changing page
+*************************************************************************************  								
+
+
+-- how to add ane option:
+-- extend lang file, including txtIndex				
+-- define index & txtIndex constant					
+-- add line & params in RxField{}					
+-- Rx_Reset table ??								OK
+-- add entry in formpage										
+-- add entry in sport2form()	(read Transformation)						
+-- add entry/constant in rxIndex()						
+-- add parameter in setvalue()			
+
+some more hints:
+- in case page1 / mapsbusline changes: adopt parametervalue in #100 (hardcoding)
+- page 2 is dependent on rx type, several defs in function "builtPage2"
+
+
+--]]
+
+
+
+
+
+local translations = {en="UNIset 1.4"}
 local lan								-- language 1=de
 
 local function name(widget)					-- name script
@@ -45,35 +75,46 @@ local function name(widget)					-- name script
   return translations[locale] or translations["en"]
 end
 
+local modeSim = false
 
-local SPORTtimeout <const>	= 1.1				--  timeout for sport push (sec)
+local SPORTtimeout = 0.1				--  timeout for sport push (sec)  // sim mode
+
+if not(modeSim) then 
+	SPORTtimeout = 1.4					-- operative mode
+end
+
+
 local debug0 <const> 		= true		-- debug level 0, basic
-local debug1 <const> 		= false			-- monitor sport2form
-local debug2 <const> 		= false			-- monitor wakeup
-local debug3 <const> 		= false			-- dishandler_set
-local debug4 <const> 		= false			-- get variable
-local debug5 <const> 		= false			-- set variable
+local debug1 <const> 		= false		-- monitor sport2form
+local debug2 <const> 		= false		-- monitor wakeup
+local debug3 <const> 		= false		-- dishandler_set
+local debug4 <const> 		= false		-- get variable
+local debug5 <const> 		= true		-- set variable
+local debug6 <const> 		= false		-- form line create
+local debug7 <const> 		= true		-- page 2 "dyn" line built
 
 local PageMaxValue  <const> 	= 6			-- max allowed pages
 -- local forward			= true		-- turn page "next"
 -- local backward 		 	= false		-- turn page "back"
 
 -- ######################   check if this entry is right !!!! #########################
-local MAPSbusLine <const> 	= 7				-- hardcoded, Formline  MapOnSbus , has to be adopted in case Para gets another "place"
+local MAPSbusLine <const> 	= 8				-- hardcoded, Formline  MapOnSbus , has to be adopted in case Para gets another "Place"
 
 -- index names > RxField entries (better human reading)
-
+--paras editable
 local CH1_8CH9_16 <const> 	= 1
 local PWM_on_SBUS <const> 	= 3
 local Tune_Offset <const> 	= 5
 local Tune_enable <const> 	= 6
-local Puls_Rate <const> 		= 7
-local MAPonPWM	<const> 		= 9
-local MAPonSBUS	<const> 		=10
-local CHAN_Mapping	<const> 	=11
+local Puls_Rate <const> 	= 7
+local MAPonPWM	<const> 	= 9
+local MAPonSBUS	<const> 	=10
+local CHAN_Mapping	<const> =11
 local SBusNotInvert <const>	=12
-local RxProtocol <const> 		=21
-local RxType <const> 			=22
+-- read only
+local FWRevision <const> 	=20
+local RxProtocol <const> 	=21
+local RxType <const> 		=22
 local RxReset <const> 		=25
 local HEADER1 <const> 		=26
 local HEADER2 <const> 		=27
@@ -83,18 +124,39 @@ local HEADER5 <const> 		=30
 local HEADER6 <const> 		=31
 
 
+local FBUSMODE <const>		= 32		-- Rev 1.4
+local txtFBUSMODE <const>	= 26		-- index language array	
+local INFO <const> 			= 33
+local txtINFO <const> 		= 27
+local CPPM <const>			= 34
+local txtCPPM <const>		= 28
+local D8CPPM <const>		= 35	
+local txtD8CPPM <const>		= 29
+local SPORTENABLE <const>	= 36
+local txtSPORTENABLE <const> = 30
+local SBUSC4 <const>		= 37
+local txtSBUSC4 <const>		= 31
+local SBUSC8 <const>		= 38
+local txtSBUSC8 <const>		= 32		-- ..Rev 1.4
+
+
+
+local RunOnStart 	= true
+local introHandler = 0
 
 local frame = {}							-- Sport frame data items
 local chMap = {}							-- chsannel map
 local txid = 0x17							-- txid used by sport
-local 	fields = {}
+local fields = {}
 
 
 local parameters = {}						-- raw array to built formsheet 
 local formPage = {}							-- form layout (line definitions)
 local APP_ID= 0x0C20						-- classic Rx type (Sx=0x0C30)
 
-
+local DIT_RECEIVER <const> = 0x09FF
+local DIT_PROTOCOL <const> = 0x08FF
+local DIT_REVISION <const> = 0x07FF
 
 local resetFlag = false						-- reset active or not
 local writeInterval = 0.15					-- minimum Sport Push interval (experimental)
@@ -102,6 +164,16 @@ local nextWrite = 0
 local resetcounter = 1	
 
 local SPLASHTIME <const>  = 2
+
+local startTime = 0
+local uni_leftTime = 0
+	
+local updateForm 	= true															-- flag new form
+local PageMax 		= P0												-- number of pages (formsheets)
+local PageActual 	= 1																-- page which is displayed
+local PageNext		= PageActual	
+local PageLast		= 2		
+
 
 
 local txtFields,optionLan,header = dofile("lang.lua")		-- get language file
@@ -135,13 +207,12 @@ local RxField = {
 	{name=txtFields[4][lan], 		d_item=0x00E3,	kind="Choice",	write_=1,			options=nil,								value=nil,	default="obsolet"	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 4			},			--  4 dummy
 	{name=txtFields[5][lan], 		d_item=0x00E4,	kind="Number",	write_=0,			minimum=-200, maximum=200,					value=nil,	default=20			,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = Tune_Offset	},			--  5 tuning offset  -127..+127	
 	{name=txtFields[6][lan], 		d_item=0x00E5,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x01E5	,formVal=nil,	disable=false,	index = Tune_enable	},			--  6 tuning enabled 1=enabled	
-	{name=txtFields[7][lan], 		d_item=0x00E6,	kind="Choice",	write_=1,			options={{"9ms", 0}, {"18ms", 1}},			value=nil,	default=0			,SPortdefault=0x00E6	,formVal=nil,	disable=false,	index = Puls_Rate	},			--  7 servo pulse period 1=9ms
+	{name=txtFields[7][lan], 		d_item=0x00E6,	kind="Choice",	write_=1,			options={{"9ms", 1}, {"18ms", 0}},			value=nil,	default=0			,SPortdefault=0x00E6	,formVal=nil,	disable=false,	index = Puls_Rate	},			--  7 servo pulse period 1=9ms
 	{name=txtFields[8][lan], 		d_item=0x00E7,	kind="Choice",	write_=1,			options=nil,								value=nil,	default="obsolet"	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 8			},			--  8 servo pulse period 1=9ms	on dedicated servo outputs bit0=Ch1
 	{name=txtFields[9][lan], 		d_item=0x00E8,	kind="Boolean",	write_=1,			options=nil,								value=nil,	default=false		,SPortdefault=0x00E8	,formVal=nil,	disable=true,	index = MAPonPWM	},			--  9 bit0: servo output enabled;  bit1: SBus output enabled
 	{name=txtFields[10][lan], 		d_item=0x00E8,	kind="Boolean",	write_=MAPonPWM,	options=optionLan[1][lan],					value=nil,	default=false		,SPortdefault=0x00E8	,formVal=nil,	disable=false,	index = MAPonSBUS	},
 	{name=txtFields[11][lan], 		d_item=0x00E9,	kind="Channel",	write_=MAPonPWM,	options=nil,								value=nil,	default=0			,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = CHAN_Mapping},			-- 11 two Bytes; 1st: output index#; 2nd channel to be used
-	{name=txtFields[12][lan], 		d_item=0x00EA,	kind="Choice",	write_=1,			options=optionLan[2][lan],					value=nil,	default=0			,SPortdefault=0x00EA	,formVal=nil,	disable=false,	index = SBusNotInvert},		-- 12 standard: inverted (0)
-
+	{name=txtFields[12][lan], 		d_item=0x00EA,	kind="Choice",	write_=1,			options=optionLan[2][lan],					value=nil,	default=0			,SPortdefault=0x00EA	,formVal=nil,	disable=false,	index = SBusNotInvert},			-- 12 standard: inverted (0)
 
 -- read only
 	{name="Total dropped packets", 		d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=3	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 13			},			-- 13 data 0
@@ -151,9 +222,9 @@ local RxField = {
 	{name="Telemetry resets)", 			d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=7	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 17			},			-- 17 data 4
 	{name="Antenna swaps",				d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=8	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 18			},			-- 18 data 5	
 	{name="Telemetry not sent (times)",	d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=9	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 19			},			-- 19 data 6
-	{name="Software Rev", 				d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=10	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 20			},			-- 20 data 7
+	{name="Software Rev", 				d_item=0x07FF,	kind="Choice",	write_=0,	value=nil,	default=10	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 20			},			-- 20 data 7
 	{name=txtFields[21][lan], 			d_item=0x08FF,	kind="Choice",	write_=0,	options={{"V1 FC", 0}, {"V1 EU", 1}, {"V2 FC", 2}, {"V2 EU"	, 3}},	value=nil,	default=1	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = RxProtocol	},			-- 21 data 8
-	{name=txtFields[22][lan], 			d_item=0x09FF,	kind="Choice",	write_=0,	options={{"D8", 1}, {"X8R/X6R", 2}, {"X4R", 3}, {"Rx8Rpro", 4}, {"Rx8R", 5}, {"Rx4R/Rx6r", 6}		},	value=nil,SPortdefault=0x00FF	,	default=1	,formVal=nil,	disable=false,	index = RxType		},			-- 22 data 9
+	{name=txtFields[22][lan], 			d_item=0x09FF,	kind="Choice",	write_=0,	options={{"D8", 1}, {"X8R/X6R", 2}, {"X4R", 3}, {"Rx8Rpro", 4}, {"Rx8R", 5}, {"Rx4/6R & Gx", 6},{"XSR", 7}, {"R-XSR", 8}		},	value=nil,SPortdefault=0x00FF	,	default=1	,formVal=nil,	disable=false,	index = RxType		},			-- 22 data 9
 	{name="Antenna count[0]", 			d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=13	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 23			},			-- 23 data10
 	{name="Antenna count[1]", 			d_item=0x00FF,	kind="Choice",	write_=1,	value=nil,	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = 24			},			-- 24 data11
 	
@@ -164,8 +235,50 @@ local RxField = {
 	{name="header3",					d_item=0x30,	kind="page",	write_=0,	value="<- 3 ->",	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = HEADER3},
 	{name="header4",					d_item=0x30,	kind="page",	write_=0,	value="<- 4 ->",	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = HEADER4},
 	{name="header5",					d_item=0x30,	kind="page",	write_=0,	value="<- 5 ->",	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = HEADER5},
-	{name="header6",					d_item=0x30,	kind="page",	write_=0,	value="<- 6 ->",	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = HEADER6}
+	{name="header6",					d_item=0x30,	kind="page",	write_=0,	value="<- 6 ->",	default=14	,SPortdefault=0x00FF	,formVal=nil,	disable=false,	index = HEADER6},
+	
+	-- Rev 1.4 additions:
+	{name=txtFields[txtFBUSMODE][lan], 	d_item=0x00EC,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00EC	,formVal=nil,			disable=false,	index = FBUSMODE	},			-- 35 FBUS active on S.Port
+	{name=txtFields[txtINFO][lan],		d_item=0x00FF,	kind="Txt",		write_=0,	value="reading from Rx",			default="??"	,SPortdefault=0x00FF	,formVal="reading ",	disable=true,	index = INFO},
+	
+	{name=txtFields[txtCPPM][lan], 		d_item=0x00E3,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00E3	,formVal=nil,			disable=false,	index = CPPM	},	
+	{name=txtFields[txtD8CPPM][lan], 	d_item=0x00ED,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00ED	,formVal=nil,			disable=false,	index = D8CPPM	},	
+	{name=txtFields[txtSPORTENABLE][lan],d_item=0x00E3,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00E3	,formVal=nil,			disable=false,	index = SPORTENABLE	},	
+	{name=txtFields[txtSBUSC4][lan], 	d_item=0x00E2,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00E2	,formVal=nil,			disable=false,	index = SBUSC4	},
+	{name=txtFields[txtSBUSC8][lan], 	d_item=0x00E1,	kind="Boolean",	write_=1,	options=nil,		value=nil,	default=false		,SPortdefault=0x00E1	,formVal=nil,			disable=false,	index = SBUSC8	},	
 }
+
+for i =1,#RxField do
+	RxField[i].formVal = nil
+end
+
+RxField[INFO].formVal ="READING DATA"											-- fill Info Field
+
+	
+
+
+
+local 	lookupRxPnt = {}
+		lookupRxPnt[1]  = "channel 1-8 / 9-16"
+		lookupRxPnt[3]  = "PWM_on_SBUS"
+		lookupRxPnt[5]  = "Tune_Offset"
+		lookupRxPnt[6]  = "Tune_enable"
+		lookupRxPnt[7]  = "Puls_Rate"
+		lookupRxPnt[9]  = "MAPonPWM"
+		lookupRxPnt[10] = "MAPonSBUS"
+		lookupRxPnt[11] = "CHAN_Mapping"
+		lookupRxPnt[12] = "SBusNotInvert"
+		lookupRxPnt[20] = "FWRevision"
+		lookupRxPnt[21] = "RxProtocol"
+		lookupRxPnt[22] = "RxType"
+		lookupRxPnt[25] = "Reset Button"
+		lookupRxPnt[32] = "FBUSMODE"
+		lookupRxPnt[33] = "INFO"
+		lookupRxPnt[34] = "CPPM"
+		lookupRxPnt[35] = "D8CPPM"
+		lookupRxPnt[36] = "SPORTENABLE"
+		lookupRxPnt[37] = "SBUSC4"
+		lookupRxPnt[38] = "SBUSC8"
 
 
 																							-- ************************************************
@@ -178,6 +291,7 @@ local Rx_Reset = {
 	Puls_Rate,
 	MAPonPWM,
 	SBusNotInvert,
+	FBUSMODE,
 	CHAN_Mapping}
 	
 	
@@ -190,27 +304,19 @@ local Rx_Reset = {
 formPage[1] =							-- form page1
 {
 	
-  {pointer =	HEADER1},	
-  {pointer =	RxField[RxType].index		},		-- 1 Stat9Read / RxType
-  {pointer =	RxField[RxProtocol].index	},		-- 2 Tx protocol auto detect
-  {pointer =	RxField[CH1_8CH9_16].index	},		-- 6 Chans9_16
-  {pointer =	RxField[Puls_Rate].index	},	 	-- 7 Puls_Rate
-  {pointer =	RxField[MAPonPWM].index		},		-- 9 Map on PWM	; should be on 1st page to determine #pages
- {pointer =	RxField[MAPonSBUS].index	}		--10 Map on SBUS 
+  	{pointer =	HEADER1},	
+  	{pointer =	33	},		-- calculated info line
+	{pointer =	RxField[Tune_enable].index	},			-- 4 TuneOffset
+	{pointer =	RxField[Tune_Offset].index	},  		-- 5 TuneValue 
+  	{pointer =	RxField[CH1_8CH9_16].index	},		-- 6 Chans9_16
+  	{pointer =	RxField[Puls_Rate].index	},	 	-- 7 Puls_Rate
+  	{pointer =	RxField[MAPonPWM].index		},		-- 9 Map on PWM	; should be on 1st page to determine #pages (sport2form)
+  	{pointer =	RxField[MAPonSBUS].index	}		--10 Map on SBUS 
 
   }
 
 
-formPage[2] =							-- form page2
-{
- -- {"                                  Rx main settings B",	"TextOnly","PAGE 2/6"												},
-  {pointer =	HEADER2},	
-  {pointer =	RxField[SBusNotInvert].index	},		--12 SBUS Inv
-  {pointer =	RxField[PWM_on_SBUS].index	},			-- 3 Sbus4Value
-  {pointer =	RxField[Tune_enable].index	},			-- 4 TuneOffset
-  {pointer =	RxField[Tune_Offset].index	},  		-- 5 TuneValue 																					--   read Rx manually
-  {pointer =	RxField[RxReset].index}	  				--25 Button Reset																	--   flash RX
-  }
+
 
   
 formPage[3] =							-- form page3
@@ -268,28 +374,37 @@ end
 local intro 
 local uni_left= false
 local uni_leftTime
-local bitmap1_flag = false	
+local bitmap1_flag = false
 local bit_mp = "engelmt.bmp"
 
 
 
-local function windowclear(widget)
-	lcd.color(BLACK)
-	lcd.pen(SOLID)
-	--lcd.drawFilledRectangle(0, 0, lcd_w, lcd_h)
-	lcd.drawFilledRectangle(0, 0, 350, 210)
+
+local function RecLookup(index)
+	local rx ={
+		"D8",
+		"X8/X6R",
+		"X4R",
+		"Rx8Rpro",
+		"Rx8R",
+		"Rx4/6R & Gx",
+		"XSR",
+		"R-XSR"
+		}
+		
+	return rx[index]
 end
 
 
+local function protoLookup(index)
+	local prot ={
+			"V1-FC", 
+			"V1-EU", 
+			"V2-FC",
+			"V2-EU",
+		}
 
-local function showmem()
-	local mem = system.getMemoryUsage()
-	print("------------------------------------")
-	print("Main Stack: "..mem["mainStackAvailable"])
-	print("RAM Avail: "..mem["ramAvailable"])
-	print("LUA RAM Avail: "..mem["luaRamAvailable"])
-	print("LUA BMP Avail: "..mem["luaBitmapsRamAvailable"])
-	print("++++++++++++++++++++++++++++++++++++")
+	return prot[index+1]
 end
 
 																			-- ************************************************
@@ -308,16 +423,20 @@ end
 																			-- ********	is called by wakeup loop, when data was read	*****
 																			-- **************************************************************
 
-local function sport2form(value, fieldId, parameter, rxIndex)
+local function sport2form(value, fieldId, parameter, rxIndex,widget)
 local result
 	if fieldId == 0x09FF then																								-- RxType  data9 from FF
 				value = math.floor(value / (256*256))
 				rxIndex = RxType
 				RxField[rxIndex].value = bitband_FF(value)
 				RxField[rxIndex].formVal = RxField[RxType].value	
+				
+
 				result = RxField[rxIndex].formVal
 				print("== set RxType",value)
-				if debug1 then print("====  READitem 09ff",RxField[RxType].name,RxField[RxType].formVal ) end
+				receiver = rxlookup(RxField[rxIndex].value)
+				if debug1 then print("====  READitem 09ff Receiver",RxField[RxType].name,RxField[RxType].formVal,RxField[rxIndex].value, widget.receiver ) end
+
 	
 				
 	elseif fieldId == 0x08FF then																							-- Rx protocol data8 from FF
@@ -328,6 +447,16 @@ local result
 				result = RxField[rxIndex].formVal	
 				print("== set Protocol",value)				
 				if debug1 then print("====  READitem 08FF",RxField[RxProtocol].name,RxField[RxProtocol].formVal ) end
+				
+	elseif fieldId == 0x07FF then																								-- revision  data7 from FF
+				value = math.floor(value / (256*256))
+				rxIndex = FWRevision
+				RxField[rxIndex].value = bitband_FF(value)
+				RxField[rxIndex].formVal = RxField[RxType].value	
+				result = RxField[rxIndex].formVal
+				print("== set Revision",value)
+				revision = rxlookup(RxField[rxIndex].value)
+				if debug1 then print("====  READitem 09ff Receiver",RxField[RxType].name,RxField[RxType].formVal,RxField[rxIndex].value, widget.receiver ) end
 	
 	
 	elseif rxIndex == CH1_8CH9_16 or rxIndex == Puls_Rate  or  rxIndex == SBusNotInvert or rxIndex == Tune_Offset   then	-- simple choice/num field	
@@ -343,7 +472,7 @@ local result
 				result = RxField[rxIndex].formVal
 
 				
-	elseif rxIndex == PWM_on_SBUS  or rxIndex == Tune_enable then															-- simple boolean handling
+	elseif rxIndex == PWM_on_SBUS  or rxIndex == Tune_enable or rxIndex == FBUSMODE  or rxIndex == CPPM  or rxIndex == D8CPPM  or rxIndex == SPORTENABLE  or rxIndex == SBUSC4 or rxIndex == SBUSC8 then										-- simple boolean handling
 				value = math.floor(value / 256)	
 				RxField[rxIndex].value = bitband_FF(value)
 				if RxField[rxIndex].value > 0 then
@@ -363,6 +492,7 @@ local result
 					RxField[MAPonPWM].value = value
 					RxField[MAPonPWM].formVal = true
 					PageMax = PageMaxValue
+					print("486 set maxpage pwm",PageMax)
 					if debug1 then print("set map",RxField[MAPonPWM].formVal) end
 					if value > 1 then																						-- in addition, sbus mapping enabled
 						RxField[MAPonSBUS].value = value
@@ -374,7 +504,8 @@ local result
 						if debug1 then print("set mapBUS",RxField[MAPonSBUS].formVal)	 end				
 					end
 				else																											-- no mapping
-					PageMax = 2																									-- so disable cannel mapping pages
+					PageMax = 2			
+					print("499 set maxpage pwm",PageMax)																						-- so disable cannel mapping pages
 					RxField[MAPonPWM].value = value
 					RxField[MAPonPWM].formVal = false
 					RxField[MAPonSBUS].value = value
@@ -407,7 +538,6 @@ end
 																			-- *****************************************************************
 local function rxIndex(parameter)											
 	local rxPointer
-
 	if parameter[1] == txtFields[CH1_8CH9_16][lan] then
 		rxPointer = CH1_8CH9_16
 
@@ -437,12 +567,37 @@ local function rxIndex(parameter)
 		
 	elseif parameter[1] == txtFields[RxType][lan] then
 		rxPointer = RxType
+	
+	elseif parameter[1] == txtFields[txtFBUSMODE][lan] then
+		rxPointer = FBUSMODE
+
+	elseif parameter[1] == txtFields[txtCPPM][lan] then
+		rxPointer = CPPM
+		
+	elseif parameter[1] == txtFields[txtD8CPPM][lan] then
+		rxPointer = D8CPPM
+		
+	elseif parameter[1] == txtFields[txtSPORTENABLE][lan] then
+		rxPointer = SPORTENABLE
+		
+	elseif parameter[1] == txtFields[txtSBUSC4][lan] then
+		rxPointer = SBUSC4
+		
+	elseif parameter[1] == txtFields[txtSBUSC8][lan] then
+		rxPointer = SBUSC8
+
+
+
+	elseif parameter[1] == txtFields[txtINFO][lan] or parameter[6]=="info" then
+		rxPointer = INFO
+
+
 		
 	elseif parameter[1] == ">>" or  parameter[1] =="Coding by Udo Nowakowski" then
 		rxPointer = RxReset
 		
 	elseif parameter[1] ==PAGESTRG  then
-		print("PARA",parameter[1],parameter[2],parameter[3],parameter[4])
+		--print("PARA",parameter[1],parameter[2],parameter[3],parameter[4])
 		if 		parameter[3] == "<- 1 ->" then rxPointer = HEADER1
 		elseif 	parameter[3] == "<- 2 ->" then rxPointer = HEADER2 
 		elseif 	parameter[3] == "<- 3 ->" then rxPointer = HEADER3 
@@ -450,14 +605,11 @@ local function rxIndex(parameter)
 		elseif 	parameter[3] == "<- 5 ->" then rxPointer = HEADER5 
 		elseif 	parameter[3] == "<- 6 ->" then rxPointer = HEADER6 
 		end
-	
-
 		
 	elseif string.sub(parameter[1],1,3) == "Ch " then
 		rxPointer = CHAN_Mapping
-		end
-		
-	--print("Rxpointer detected ",parameter[1],		rxPointer)	
+	end
+
 	return(rxPointer)
 end
 
@@ -468,20 +620,20 @@ end
 																			-- ********   evaluate if field enabling is dependent from other values  *********
 																			-- *******************************************************************************
 local function dishandler_get(parameter,rxPointer)
-	for i = 2,#fields do
-	--print("allfields dishandler",fields[i],fields[i][1])
-	end
+
 		if rxPointer == MAPonSBUS then															-- map on sbus dependency: "Mapping on PWM" disabled ?	
 			if RxField[MAPonPWM].formVal == false or RxField[MAPonPWM].formVal == nil then		-- request status "parent" condition
 				RxField[MAPonSBUS].formVal 	= false												-- reset values
 				RxField[MAPonSBUS].value 	= 0
-				print("F2 dis_get",fields[MAPSbusLine])
-				fields[MAPSbusLine]:enable(false)												-- disable SBUS mapping field (hardcoded !!)
+			--	print("598 F2 dis_get",fields[MAPSbusLine],rxPointer,MAPonSBUS)
+			--	fields[MAPSbusLine]:enable(false)											-- disable SBUS mapping field (hardcoded !!)
 				PageMax = 2	
+				print("629 set maxpage maponSBUS",PageMax)
 				return(false)													-- disable channel mapping config
 			else
 				fields[MAPSbusLine]:enable(true)
 				PageMax = PageMaxValue	
+				print("634 set maxpage maponSBUS",PageMax)
 				return(true)
 			end
 																								-- ch map handling on start (rx not read/ vars initialized, so no mapping page)
@@ -509,10 +661,12 @@ local function dishandler_set(parameter)
 				RxField[MAPonSBUS].value 	= 0													-- no SBUS mapping 
 				if debug3 then print("++info pre set sbus",parameters[4][1],parameters[4][4]) end
 				fields[MAPSbusLine]:enable(false)												-- disable SBUS mapping field / field line #4 (hardcoded !!)
+				print("662 set maxpage pwm",PageMax)
 				PageMax = 2																		-- disable channel mapping config
 			else
 				fields[MAPSbusLine]:enable(true)												-- else: enable field & channel map
 				PageMax = PageMaxValue	
+				print("666 set maxpage pwm",PageMax)
 				if debug3 then print("set exception pwm",parameter[4]) end
 			end
 	end
@@ -544,11 +698,13 @@ local function getValue(parameter)
 			if debug4 then print ("get returns default") end
 			-- return RxField[rxPointer].default										-- andreas requested nil
 		else
-			if debug4 then print ("get returns",RxField[rxPointer].value) end
+			if debug4 then print ("ItemIdx",rxPointer,"get returns",RxField[rxPointer].value) end
 			return RxField[rxPointer].formVal
 		end							
 	end
 end
+
+
 
 
 
@@ -565,7 +721,7 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 	local newValue
 	local rxPointer = rxIndex(parameter)
 	local returnVal
-	if debug5 then print(parameter[1],"para6:", parameter[6],"pointer:",rxPointer ,parameter[4],value) end
+	if debug5 then print("..690 enter setval",parameter[1],"para6:", parameter[6],"pointer:",rxPointer ,parameter[4],value) end
 	
 	if 	string.sub(parameter[1],1,3) == "Ch " then										-- probe channel field
 		local ChanNum = tonumber(string.sub(parameter[1],4,5))							-- extract channel number
@@ -614,15 +770,16 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 	
 	
 		elseif rxPointer == Puls_Rate then		
-			if value == 0 then
-				newValue = 0x00E6
-			else
+			if value == 1 then
 				newValue = 0x01E6
+				modifications[2] = {parameter[3], 0x01FFE7}		-- 18ms all channels
+			else
+				newValue = 0x00E6
+				modifications[2] = {parameter[3], 0x00E7}		-- 09 ms all channels
 			end
 			modifications[1] = {parameter[3], newValue}											-- set {dataitem,value} for wakeup processing	
 			if debug5 then print ("set PulsRate detected",string.format("%x",newValue)) end
 
-			
 		elseif rxPointer == MAPonPWM then
 			if value == false then
 				newValue = 0x00E8
@@ -655,6 +812,67 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 			end
 			modifications[1] = {parameter[3], newValue}	
 			if debug5 then print ("set SBus inverted detected",string.format("%x",newValue)) end
+		
+		
+		elseif rxPointer == FBUSMODE then	
+			if value then
+				newValue = 0x01EC
+			else
+				newValue = 0x00EC
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set fbusMODE detected",string.format("%x",newValue)) end
+
+		elseif rxPointer == CPPM then	
+			print("825 elseif cppm",value)
+			if value then
+				newValue = 0x00E3
+			else
+				newValue = 0x00E3
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set CPPM detected",string.format("%x",newValue,value)) end
+
+
+		elseif rxPointer == D8CPPM then	
+			if value then
+				newValue = 0x01ED
+			else
+				newValue = 0x00ED
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set D8CPPM detected",string.format("%x",newValue)) end
+	
+
+		elseif rxPointer == SPORTENABLE then	
+			if value then
+				newValue = 0x01E3
+			else
+				newValue = 0x00E3
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set SPORTENABLE detected",string.format("%x",newValue)) end
+
+
+		elseif rxPointer == SBUSC4 then	
+			if value  then
+				newValue = 0x01E2
+			else
+				newValue = 0x00E2
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set SBUSC4 detected",string.format("%x",newValue)) end
+		
+	
+		elseif rxPointer == SBUSC8 then	
+			if value then
+				newValue = 0x01E1
+			else
+				newValue = 0x00E1
+			end
+			modifications[1] = {parameter[3], newValue}	
+			if debug5 then print ("set SBUSC8 detected",string.format("%x",newValue)) end	
+
 
 		elseif rxPointer == RxReset then	
 			if debug5 then print ("set RxReset detected") end
@@ -687,7 +905,7 @@ end
 
 
 local function createBooleanField(line, parameter)
-	local field = form.addBooleanField(line, nil, function() return getValue(parameter) end, function(value) setValue(parameter, value) end)
+	local field = form.addBooleanField(line, nil, function() return getValue(parameter) end, function(value) setValue(parameter, value)  end)
 	if parameter[5] ~= 0  then 												-- if write enabled >>
 		--field:enable(true)
 		field:enable(false)
@@ -738,6 +956,13 @@ local function createTextOnly(line,parameter,inx)
   return field
 end
 
+local function createTextField(line,parameter)
+	local field = form.addTextField(line, nil, function()   return getValue(parameter) end, function(newValue)   setValue(parameter, newValue) end)
+	return field
+  end
+
+
+
 
 
 
@@ -757,7 +982,7 @@ local function built_para()													-- wrapper: transform page dependent RxF
 	local kind 	= RxField[formPage[PageActual][index].pointer].kind
 	local name	= RxField[formPage[PageActual][index].pointer].name
 	local dItem	= RxField[formPage[PageActual][index].pointer].d_item
-	--print("built array", index,PageActual,name)	
+
 	if kind == "Number" then
 		parameters[index] =	{name,	createNumberField,	dItem,	nil,RxField[formPage[PageActual][index].pointer].write_	,RxField[formPage[PageActual][index].pointer].disable	,	RxField[formPage[PageActual][index].pointer].minimum,		RxField[formPage[PageActual][index].pointer].maximum}
 
@@ -775,10 +1000,16 @@ local function built_para()													-- wrapper: transform page dependent RxF
 
 	elseif kind == "TxtOnly" then
 		parameters[index] =	{name,	createTextOnly,	RxField[formPage[PageActual][index].pointer].value,name,}
-	
+	elseif kind == "Txt" then
+			parameters[index] =	{name,	createTextField, dItem,	RxField[formPage[PageActual][index].pointer].value,name,"ID"}
+			if RxField[formPage[PageActual][index].pointer].index == INFO then									-- create "uid" for later identification, because name will change !
+				parameters[index][6]="info"
+			end		
+		
 	elseif kind == "page" then
-		parameters[index] =	{PAGESTRG,	createTextOnly,	RxField[formPage[PageActual][index].pointer].value,name,}
+		parameters[index] =	{PAGESTRG,	createTextOnly,	RxField[formPage[PageActual][index].pointer].value,name,"id"}
 
+		
 	end
   end
 
@@ -792,6 +1023,7 @@ end
 																			-- ************************************************
 
 local function newform()
+
 	local rxPointer
 	local parameter ={}	
 	fields = {}
@@ -802,7 +1034,7 @@ local function newform()
 	form.clear()
 	for index = 1, #parameters do
 		parameter = parameters[index]													-- get parameters "line"
-		if debug0 then print("built line",index,parameter[1]) end
+		if debug6 then print("built line",index,parameter[1]) end
 		local line = form.addLine(parameter[1])											-- add empty lineinto form
 		local field = parameter[2](line, parameter)										-- create field entry using corresponding method
 		rxPointer= rxIndex(parameter)
@@ -810,13 +1042,17 @@ local function newform()
 		fields[index] = field
 --		fields[#fields + 1] =parameter[2](line, parameter)										-- create field entry using corresponding method
 													-- evaluate dependencies (disable edit)
-		print("FIELDS xx building",#fields + 1,fields[#fields + 1],field,rxPointer)
+		if debug6 then print("FIELDS xx building",#fields + 1,fields[#fields + 1],field,rxPointer) end
 		if RxField[rxPointer].write_> 1	then											-- disabling by other lines detected
 			if dishandler_get(parameter,rxPointer)	== false	then					-- so handle field disabling ; if channel mapping disabled:
 				return(false)															-- return false
 			end
 		end	
-
+--		if parameter[1] == txtFields[txtINFO][lan] then									-- detect line "INFO" using name
+		if PageActual == 1 and index==2 then											-- detect line "INFO" using name
+			print("954 run info ")
+			fields[index]:enable(false)													-- ensure disabled
+		end
 	end
 	print("FIELDS finished")
 	return(true)
@@ -836,8 +1072,9 @@ end
 																			-- ************************************************
 
 local function paint(widget)
+	local w, h = lcd.getWindowSize()
 
-	if intro then
+  if intro then
 		local lcd_w, lcd_h = lcd.getWindowSize()
 		if debug0 then print("LOAD & DISPLAY Intro",getTime()) end
 		local bitmap1 = lcd.loadBitmap(bit_mp)
@@ -854,10 +1091,9 @@ local function paint(widget)
 		end	
 	
 	else
-	--print("PAINT: check upd",updateForm)
+		
+
 	if updateForm then																-- new page ?
-	print("paint: UPDFORM true")
-	windowclear(widget)
 		if refreshPage() == false then												-- channel mapping disabled				-- if not, dependencies encountert, so no channel mapping
 			PageMax = 2																-- disable mapping pages
 			if PageLast == 1 then													-- refresh
@@ -868,10 +1104,13 @@ local function paint(widget)
 			refreshPage()															-- built next page
 		end
 	end
+
+
+
 	updateForm = false
 	uni_left = false	-- reset update flag
-	--if debug0 then print("finished print new form") end
-end
+
+  end
 end
 
 
@@ -883,6 +1122,8 @@ end
 
 local function create()
 																					-- initialize
+	print("**************************************************     create handler ********************************")
+
 	requestInProgress 	= false														-- active request
 	refreshIndex 		= 0															-- actual form field "sensor"
 	modifications 		= {}														-- new setting
@@ -893,29 +1134,24 @@ local function create()
 	for i=1,50 do																		-- init fields array
 		fields[i]=nil
 	end
-
+	introHandler = 0  																-- return to start condition
 	startTime = getTime()
-uni_leftTime = startTime
+	uni_leftTime = startTime
 	
-	updateForm 		= false															-- flag new form
+	updateForm 		= true															-- flag new form
 	PageMax 		= PageMaxValue													-- number of pages (formsheets)
 	PageActual 		= 1																-- page which is displayed
 	PageNext		= PageActual													-- page which should be displayed next
---	PageLast		= 1	
-	PageLast		= 2														-- last shown display
+	PageLast		= 2																-- last shown display
 
-	for i =1,#RxField do
-		RxField[i].formVal = nil
-	end
-   	built_para()																	-- built page dependent parameters array
-		
+	built_para()																	-- built page dependent parameters array
+
  	sensor={} 																		-- SPORT
 	sensor = sport.getSensor({appId=APP_ID});
 	sensor:idle()
-	intro = true
-	showmem()
+	intro = true																	-- true = paint intro
 	
-	return {sensor=sensor}
+	return {sensor=sensor, receiver=receiver, protocol=protocol, revision=revision, revtext=revtext, infotext=infotext}
 end
 
 
@@ -961,28 +1197,92 @@ end
 local function runIntro(widget)
 	
 		if getTime() > startTime + SPLASHTIME then									--check within intro time, if not:
-			updateForm = true
 			print("END INTRO")												-- >> finish intro
-			windowclear(widget)
 			intro = false
-			paint(widget)
+
 		end
 end
-																			-- ************************************************
-																			-- ***		     "background" routine 	   		*** 
-																			-- ************************************************
 
-local function wakeup(widget)
+local function pollData(widget,dItem)								-- poll Sport for Data aquise
+	print("!!!!!!!!!!!!   poll",dItem)
+	local retVal = true
+	if debug2 then print(" WAKEUP:   refreshIndex < Num Parameters, Polling ",string.format("%X",dItem),refreshIndex+1) end
+	if widget.sensor:pushFrame({primId=0x30, appId=APP_ID,value= dItem }) == true then			-- send read request
+		requestInProgress = true																-- activate read request loop !!!
+		telemetryPopTimeout = getTime() + SPORTtimeout												-- set timeout
+		pollDelay = getTime() +2/10																-- set delay until response can be expected
+		if debug2 then print(" polldata:   polled successfull ",string.format("%X",dItem),APP_ID) end
 
-	if intro then 
-
-		runIntro(widget)
-
+	else
+		if debug2 then print(" polldata:   poll returned false ",string.format("%X",dItem),APP_ID) end
+		retVal = false
 	end
-	--print("cls ---------------------------")
-	paint(widget)
-	if requestInProgress then																-- request active ?
-	--print("Fields",refreshIndex + 1,fields[refreshIndex + 1])
+	return retVal
+end
+
+
+
+
+
+local function wait4Data(widget,reqItem)								-- wait for SPort answere after polling; reqItem = requested DataItem
+		local sportdata	= nil										
+		print ("enter introrequest, wait for data",reqItem, getTime() , telemetryPopTimeout,telemetryPopTimeout-getTime())
+
+		if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
+			if debug2 then print(" 1148 Wait4data:      ------------    SPort timeout  --------------") end
+			requestInProgress = false	
+			telemetryPopTimeout = 0
+			modifications[1] = nil	
+			return 999999
+		else		
+		--print("Fields",refreshIndex + 1,fields[refreshIndex + 1])
+			frame = widget.sensor:popFrame(widget)												-- wait for frame
+		  	if frame ~= nil then
+				local value = frame:value()						
+				local appl_id=frame:appId()						
+
+					local fieldId
+					if value % 256	== 0xFF then												-- extract dataitem(fieldID)  from package Rx "Stat" item
+						if value > reqItem then													-- ditem rx Protocol/type  is 2 byte
+							fieldId = value&0xFFFF
+							value = math.floor(value / 256)										-- no sport2form handling, so extract here !
+						end
+						if debug2 then print(" 1159 Wait4data :   Frame got RawValue", string.format("%X",value),fieldId) end
+					else
+						fieldId = value % 256
+					end
+
+																									-- check right item & extract value
+					if fieldId == reqItem then
+					-- local parameter = parameters[refreshIndex + 1]								-- get corresponding form data					-- form handling
+					-- if fieldId == parameter[3] then												-- received dataItem = requested item ?			-- form handling
+						local value2=value
+						sportdata = math.floor(value / 256)											-- extract value from package
+						print("1170 extracted ",reqItem,sportdata)
+						
+				end
+				
+
+							
+			end
+		end	
+	return sportdata
+
+end
+
+local function wait4items(widget,reqItem)
+
+	local sportdata	= nil										
+	--print ("enter request inprogress, wait for data",reqItem, getTime() , telemetryPopTimeout,telemetryPopTimeout-getTime())
+
+	if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
+		if debug2 then print(" WAKEUP:      ------------    SPort timeout  --------------") end
+		requestInProgress = false	
+		telemetryPopTimeout = 0
+		modifications[1] = nil	
+		return 999999
+	else		
+			--print("Fields",refreshIndex + 1,fields[refreshIndex + 1])
 			frame = widget.sensor:popFrame(widget)
 			if frame ~= nil then
 				local value = frame:value()						
@@ -990,10 +1290,10 @@ local function wakeup(widget)
 
 					local fieldId
 					if value % 256	== 0xFF then												-- extracted dataitem from package Rx "Stst" item
-						if value >  parameters[refreshIndex + 1][3] then											-- ditem rx Protocol/type  is 2 byte
+						if value >  parameters[refreshIndex + 1][3] then						-- ditem rx Protocol/type  is 2 byte
 							fieldId = value&0xFFFF
 						end
-						if debug2 then print(" WAKEUP:   Frame got RawValue", string.format("%X",value),fieldId) end
+						if debug2 then print(" 1260  wait4items   Frame got RawValue", string.format("%X",value),fieldId) end
 					else
 						fieldId = value % 256
 					end
@@ -1002,24 +1302,36 @@ local function wakeup(widget)
 						local value2=value
 						value = math.floor(value / 256)											-- extract value from package
 					
-						local rxPointer = rxIndex(parameter)
-						parameters[refreshIndex + 1][4] = sport2form(value2,fieldId,parameter,rxPointer)
-						if debug2 then print(" WAKEUP:   GOT", parameters[refreshIndex + 1][4]) end
+						local rxPointer = rxIndex(parameter)									-- rxpointer = itemIndex
+						parameters[refreshIndex + 1][4] = sport2form(value2,fieldId,parameter,rxPointer,widget)
+						if debug2 then print(" 1271 wait4items   GOT", parameters[refreshIndex + 1][4]) end
 								-- set parameter from value
 						if value ~= nil  then 
 						
-							if RxField[rxPointer].write_ == 1 then													-- enable edit 
-									if debug2 then print(" WAKEUP:   enable", RxField[rxPointer].name) end
-									if fields[refreshIndex + 1] ~= nil then
-										fields[refreshIndex + 1]:enable(true)	
-									end	
+							if RxField[rxPointer].write_ == 1 then													-- stage 1 enable field edit if defined
+																													-- stage 2: filter dedicated cases
+									
+								if 		(rxPointer == Tune_enable 	or rxPointer ==   CH1_8CH9_16 or rxPointer ==  MAPonSBUS or rxPointer ==  Puls_Rate) 							-- supported by all receiver
+									or	(rxPointer == FBUSMODE 		and widget.revision > 79 and widget.receiver ~= "D8")																			-- fbus avalaible rev>=80 (no D8)
+									or	(widget.receiver == "D8" 	and (rxPointer == D8CPPM or rxPointer == SPORTENABLE or rxPointer == SBUSC4 or rxPointer == SBUSC8 ))					-- dedicated D8 funcs
+									or	(rxPointer == CPPM 	and (widget.receiver == "Rx4/6R & Gx" or widget.receiver == "R-XSR"))																			-- cppm only XSR/ R-XSR
+									or	(rxPointer == SBusNotInvert	and (widget.receiver == "D8" or widget.receiver == "Rx8Rpro" or widget.receiver == "Rx4/6R & Gx" or widget.receiver == "R-XSR"))					-- sbus not inverted
+									or	(rxPointer == PWM_on_SBUS	and widget.receiver ~= "D8" )																							-- servo on sbus
+									or	true
+										then																																		-- enable edit mode
+										if debug2 then print(" wait4items:   enable", RxField[rxPointer].name) end
+										if fields[refreshIndex + 1] ~= nil then
+											fields[refreshIndex + 1]:enable(true)	
+										end	
+								end
+								
 							elseif RxField[rxPointer].write_> 1 then
 									local enableStatus = dishandler_get(parameter,rxPointer)
-									if debug2 then print(" WAKEUP:   enable returned ", parameter[1],enableStatus) end
+									if debug2 then print(" wait4items:   enable returned ", parameter[1],enableStatus) end
 									--print("1006",refreshIndex + 1)
 									fields[refreshIndex + 1]:enable(enableStatus)
 							else
-									if debug2 then print(" WAKEUP:   disable", RxField[rxPointer].name) end
+									if debug2 then print(" wait4items:   disable", RxField[rxPointer].name) end
 									fields[refreshIndex + 1]:enable(false)					
 							end
 							refreshIndex = refreshIndex + 1											-- prepare to get next item
@@ -1029,105 +1341,421 @@ local function wakeup(widget)
 
 						if (refreshIndex + 1)	<= (#parameters) and formPage[PageActual][refreshIndex + 1].pointer == RxReset then		-- filter some fields for Sport handling, here: RxReset
 							refreshIndex = refreshIndex + 1	
-							if debug2 then print(" WAKEUP:   RxReset detected") end							
+							if debug2 then print(" wait4items:   RxReset detected") end							
 						end
 						--if refreshIndex == (#parameters) then  updateForm=true end			-- last item, so enable update form;  would disable all after andreas change..
 						requestInProgress = false												-- active request loop "closed"
 					end
 				
-			else
-					if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
-						if debug2 then print(" WAKEUP:      ------------    SPort timeout  --------------") end
-						requestInProgress = false	
-						telemetryPopTimeout = 0
-						modifications[1] = nil	
-					end										
+						
 			end
-			
-	elseif resetFlag then																	-- RxReset encountered
+	end
+end	
 
-		-- disable fields here
-			for i=1,#parameters do
-				-- print("index:",i)
-				if fields[i] ~= nil then fields[i]:enable(false) end
-			end
-			if getTime() > nextWrite then
-				if Rx_Reset[resetcounter] ~= CHAN_Mapping then
-					local value = RxField[Rx_Reset[resetcounter]].SPortdefault
-					if debug2 then print("pushreset",resetcounter,APP_ID,string.format("%x",value)) end
-					widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})
-					nextWrite = getTime() + writeInterval
-					resetcounter = resetcounter+1
-				else																			-- channel map handler
-					for i = 0, 15 do
-						chMap[i+1] = i+1														-- Sport 0..15 // formValues & index: 1..16 
-						local value =  i*65536 + i*256 + 0xE9  									-- workaround missing bit32lib bor: Byte3..1   value:channel:item
-							nextWrite = getTime() + writeInterval
-							widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})				
-							if debug2 then print("pushreset Channel",i,string.format("%x",value)) end
-																				-- don't flood Sport:
-						::loopCh::
-							if getTime() > nextWrite then
-								goto breakCh
-							else
-								goto loopCh
-							end
-						::breakCh::
-					end	
-					resetcounter = resetcounter+1												-- reset channel mapping finished
-				end
-				
-				if resetcounter > #Rx_Reset then												-- reset finished ?
-					resetcounter = 1															-- >> reset counter
-					resetFlag = false															-- >> reset flag
-					updateForm = true															-- initiate page refresh
-					refreshIndex = 0
-					built_para()
-					if debug2 then print("reset finished success") end
-				end
-			end
-		
-	else																								-- no request in progress determined
-			if #modifications > 0 then																		-- maybe new data to be written / "write request" ?
-				widget.sensor:pushFrame({primId=0x31, appId=APP_ID,value=modifications[1][2]})				-- send data
-				refreshIndex = 0																			-- reset index so new "read all" initiated
-				requestInProgress = false																	-- reset request status
-				modifications[1] = nil																		-- reset mod
 
-			elseif refreshIndex < (#parameters ) then														-- no write request, maybe read request ?
-				--print("refInx",refreshIndex+1)
-				--print("Fields",refreshIndex + 1,fields[refreshIndex + 1])
-				local dItem
-				local parameter = parameters[refreshIndex + 1]
-				if parameter[1] == PAGESTRG  then															-- exclude headerline: nothing todo
-				--	refreshIndex = 1																			-- jmp to second entry
-				refreshIndex = refreshIndex +1
-				else
-					dItem = parameter[3]
-					if dItem == RxField[CHAN_Mapping].d_item then
-						if debug2 then print(" WAKEUP:   channelrequest",dItem) end
-						dItem = dItem + (formPage[PageActual][refreshIndex + 1].chNum -1)*256
-					end
-					if debug2 then print(" WAKEUP:   refreshIndex < Num Parameters, Polling ",string.format("%X",dItem),refreshIndex+1) end
-					if widget.sensor:pushFrame({primId=0x30, appId=APP_ID,value= dItem }) == true then			-- send read request
-						requestInProgress = true																-- activate read request loop !!!
-						telemetryPopTimeout = getTime() + SPORTtimeout												-- set timeout
-						pollDelay = getTime() +2/10																-- set delay util response can be expected
-						if debug2 then print(" WAKEUP:   polled successfull ",string.format("%X",dItem)) end
-					else
-						if debug2 then print(" WAKEUP:   poll returned false ",string.format("%X",dItem)) end
-					end
-				end
-			elseif refreshIndex == #parameters and  updateForm	then											-- all items on page were read, so update page if new page was called
-				if debug2 then print(" WAKEUP:   ++++++++++++++++     paint new page  ++++++++++++++++",PageActual,refreshIndex ) end
-				paint()
+local function filterPage(pageRaw,widget)						-- built formsheet only based on supported functions of receiver type (master "pageraw" includes all possible entries in page)
+	local pageX = 	{
+					{pointer =	HEADER2},
+					}
+	local index = 1									-- >> start index / start line (1=header) 
 
-			end
+	for counter = 1,#pageRaw do
+		rxPointer = pageRaw[counter].pointer
+		if debug7 then print("proof ",rxPointer,lookupRxPnt[rxPointer])	end	
+		print(rxPointer,RxReset,rxPointer == RxReset)																							-- get item index
+		if 		(rxPointer == Tune_enable 	or rxPointer ==   CH1_8CH9_16 or rxPointer ==  MAPonSBUS or rxPointer ==  Puls_Rate) then							-- supported by all receiver
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	(rxPointer == FBUSMODE 		and widget.revision > 79 and widget.receiver ~= "D8") then																		-- fbus avalaible rev>=80 (no D8)
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	rxPointer == RxReset then
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				--print("add",lookupRxPnt[rxPointer])
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	(receiver == "D8" 	and (rxPointer == D8CPPM or rxPointer == SPORTENABLE or rxPointer == SBUSC4 or rxPointer == SBUSC8 )) then					-- dedicated D8 funcs
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	(rxPointer == CPPM 	and (widget.receiver == "X4R" or widget.receiver == "R-XSR")) then																			-- cppm only XSR/ R-XSR
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	(rxPointer == SBusNotInvert	and (widget.receiver == "D8" or widget.receiver == "Rx8Rpro"or widget.receiver == "Rx4/6R & Gx"or widget.receiver == "R-XSR")) then					-- sbus not inverted
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+
+		elseif	(rxPointer == PWM_on_SBUS	and widget.receiver ~= "D8" ) then																							-- servo on sbus
+				index = index+1
+				pageX[index] = {pointer = rxPointer}
+				if debug7 then print("add",lookupRxPnt[rxPointer]) end
+		else
+				if debug7 then print("NO DETECTION !") end
+				--print("NO DETECTION !")
+		end
 
 	end
+
+	return pageX
+
+end
+
+
+
+
+local function builtPage2(rx,widget)
+
+	local formComPage =							-- common receiver page 2
+	{										
+			
+		{pointer =	RxField[SBusNotInvert].index	},		--12 SBUS Inv
+		{pointer =	RxField[PWM_on_SBUS].index	},			-- 3 Sbus4Value
+		{pointer =	RxField[FBUSMODE].index	},  			--32 FBusMode	
+		{pointer =	RxField[CPPM].index	},  				--34 CPPM	(X4R & R XSR only)													
+		{pointer =	RxField[RxReset].index}	  				--25 Button Reset																	--   flash RX
+  	}
+
+	local formD8Page =							-- D series receiver
+	{
+		{pointer =	HEADER2},	
+		{pointer =	RxField[SBusNotInvert].index	},		--12 SBUS Inv
+		{pointer =	RxField[D8CPPM].index	},				
+		{pointer =	RxField[SPORTENABLE].index	},			
+		{pointer =	RxField[SBUSC4].index	},  		
+		{pointer =	RxField[SBUSC8].index},	  				
+		{pointer =	RxField[RxReset].index}	  			
+	}
+
 	
---uni_leftTime = getTime()
---print(uni_leftTime)
+	if rx == "D8" then
+		formPage[2] = formD8Page				-- "dedicated" D8 2nd page
+		print("D8 paras recognized")
+	else
+		formPage[2] = filterPage(formComPage,widget)				-- typical page
+		print("common paras recognized")
+	end
+	
+end
+
+
+
+
+																			-- ************************************************
+																			-- ***		     "background" routine 	   		*** 
+																			-- ************************************************
+
+local function wakeup(widget)
+
+local revtxt = "n/a"
+	if intro then 
+
+		runIntro(widget)
+
+	end
+
+--	if RunOnStart and not requestInProgress then
+	
+	local tmp	
+	if modeSim and introHandler < 10 then 					-- simulate read header/intro data
+		widget.receiver = RecLookup(2)
+		widget.protocol = protoLookup(1)
+		widget.revision = 80
+		revtxt = tostring(widget.revision)	
+		widget.infotext = widget.protocol 	.. "   rev:"..revtxt
+
+		if PageActual == 1 then
+			parameters[2][1] = "RX:       "..widget.receiver		-- set new "name" at infoline
+		end
+		RxField[INFO].name		= "RX:       "..widget.receiver
+		RxField[INFO].formVal 	= widget.infotext						-- set new textvalue at infoline
+		print("**************    eval Page2")
+		builtPage2(widget.receiver,widget)
+		newform()	
+
+
+		introHandler = 99
+	elseif introHandler < 10 then									-- get header / intro data: rx Type, protocol & FW revision
+																									-- get header infos on start
+		if 	introHandler == 0 then								-- poll receiver Info
+				print("1221 poll receiver type")
+		
+				local retVal= pollData(widget,DIT_RECEIVER)
+				if retVal then
+					print("SPORT poll OK")
+					introHandler = 1							-- next step
+				else
+					print("no SPORT poll")
+					introHandler = 9							-- 9= error exception handling
+				end
+
+
+		elseif 	introHandler == 1 then							-- wait for receiver info
+				tmp = wait4Data(widget,DIT_RECEIVER)
+				if tmp ~= nil then
+					if tmp ~= 999999 then
+						widget.receiver = RecLookup(tmp)
+						--widget.receiver = RecLookup(1)
+						print("1248 got receiver type",tmp,receiver)
+						introHandler = 2
+					else
+						print("1251 got receiver type TIMEOUT",tmp)
+						introHandler = 0						-- now Rx answere, so please retry
+					end
+				end
+				
+		elseif	introHandler == 2 then							-- poll protocol info
+				print("1257 poll protocol")
+				local retVal= pollData(widget,DIT_PROTOCOL)
+				if retVal then
+					print("SPORT poll OK")
+					introHandler = 3
+				else
+					print("no SPORT poll")
+					introHandler = 9
+				end
+
+		elseif 	introHandler == 3 then							-- wait for protocol info
+				tmp = wait4Data(widget,DIT_PROTOCOL)
+				if tmp == 999999 then
+
+					print("1226 got Protocol TIMEOUT",tmp)
+					introHandler = 9
+				elseif tmp ~= nil then
+					print("1270 got Protocol",tmp)
+					widget.protocol = protoLookup(tmp)
+					introHandler = 4
+				end
+
+		elseif 	introHandler == 4 then							-- poll revision info
+				print("1278 poll Revision")
+				local retVal= pollData(widget,DIT_REVISION)
+				if retVal then
+					print("SPORT poll OK")
+					introHandler = 5
+				else
+					print("no SPORT poll")
+					introHandler = 9
+				end
+		elseif 	introHandler == 5 then							-- wait for revision info
+				widget.revision = wait4Data(widget,DIT_REVISION)
+
+				if widget.revision ~= nil then
+					--local revtxt
+					if widget.revision ~= 999999 then
+						if widget.revision > 0 then
+							revtxt = tostring(widget.revision)			-- got Rev#
+					--	else
+					--		revtxt = "n/a"						-- returnValue = 0, so older FW  (<80), so no data	; (timeout)
+						end
+					--else
+				--		revtxt = "n/a"						-- returnValue = 0, so older FW  (<80), so no data	; (timeout)				
+					end
+					print("1398 got rev",widget.revision,widget.revtxt)
+					widget.infotext = widget.protocol 	.. "   rev:"..revtxt
+
+					if PageActual == 1 then
+						parameters[2][1] = "RX:       "..widget.receiver			-- set new "name" at infoline
+					end
+
+					RxField[INFO].name		= "RX:       "..widget.receiver
+					RxField[INFO].formVal 	= widget.infotext						-- set new textvalue at infoline
+					print("**************   1400 header infotext",widget.infotext)
+					print("**************    eval Page2")
+		
+	
+					introHandler = 6							-- exit reading intro data
+				end
+		elseif introHandler == 6 then							-- data finished, await end of intro
+			if not(intro) then
+				builtPage2(widget.receiver,widget)		
+		
+				lcd.invalidate()
+				newform()	
+				introHandler = 99
+			end
+		elseif introHandler == 9 then							-- Problem !
+				-- exception handling, no values read from Rx
+				RxField[INFO].formVal = "ERROR, NO DATA !!"
+				lcd.invalidate()
+				newform()									-- generate Form with new intro values
+		end
+
+	
+	else																						-- header infos available, so proceed:
+		lcd.invalidate()
+		if requestInProgress then	
+			if parameters[refreshIndex + 1] == 2 and PageActual == 1 then					-- infoline, data was received during intro, so jump..
+				refreshIndex = refreshIndex + 1	
+			else	
+				
+			--	local retVal = wait4items(widget,reqItem)
+				
+							-- request active ?
+				frame = widget.sensor:popFrame(widget)
+				if frame ~= nil then
+					local value = frame:value()						
+					local appl_id=frame:appId()						
+
+						local fieldId
+						if value % 256	== 0xFF then												-- extracted dataitem from package Rx "Stst" item
+							if value >  parameters[refreshIndex + 1][3] then						-- ditem rx Protocol/type  is 2 byte
+								fieldId = value&0xFFFF
+							end
+							if debug2 then print(" WAKEUP:   Frame got RawValue", string.format("%X",value),fieldId) end
+						else
+							fieldId = value % 256
+						end
+						local parameter = parameters[refreshIndex + 1]								-- get corresponding form data
+						if fieldId == parameter[3] then												-- received dataItem = requested item ?
+							local value2=value
+							value = math.floor(value / 256)											-- extract value from package
+						
+							local rxPointer = rxIndex(parameter)
+							parameters[refreshIndex + 1][4] = sport2form(value2,fieldId,parameter,rxPointer,widget)
+							if debug2 then print(" WAKEUP:   1552 could read", parameters[refreshIndex + 1][1],parameters[refreshIndex + 1][4],value) end			-- print lineName & value
+							-- set parameter from value
+							if value ~= nil  then 
+							
+								if RxField[rxPointer].write_ == 1 then													-- stage 1 enable field edit if defined
+																																				-- enable edit mode
+										if debug2 then print(" WAKEUP:   enable", RxField[rxPointer].name) end
+										if fields[refreshIndex + 1] ~= nil then
+											fields[refreshIndex + 1]:enable(true)	
+										end	
+									
+								elseif RxField[rxPointer].write_> 1 then
+										local enableStatus = dishandler_get(parameter,rxPointer)
+										if debug2 then print(" WAKEUP:   enable returned ", parameter[1],enableStatus) end
+										--print("1006",refreshIndex + 1)
+										fields[refreshIndex + 1]:enable(enableStatus)
+								else
+										if debug2 then print(" WAKEUP:   disable", RxField[rxPointer].name) end
+										fields[refreshIndex + 1]:enable(false)					
+								end
+								refreshIndex = refreshIndex + 1											-- prepare to get next item
+								
+								if debug2 then print("\n\n\n*************************************************") end										
+							end
+
+							if (refreshIndex + 1)	<= (#parameters) and formPage[PageActual][refreshIndex + 1].pointer == RxReset then		-- filter some fields for Sport handling, here: RxReset
+								refreshIndex = refreshIndex + 1	
+								if debug2 then print(" WAKEUP:   RxReset detected") end							
+							end
+							--if refreshIndex == (#parameters) then  updateForm=true end			-- last item, so enable update form;  would disable all after andreas change..
+							requestInProgress = false												-- active request loop "closed"
+						end
+					
+				else
+						if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
+							if debug2 then print(" WAKEUP:      ------------    SPort timeout  --------------") end
+							requestInProgress = false	
+							telemetryPopTimeout = 0
+							modifications[1] = nil	
+							refreshIndex = refreshIndex + 1				-- next field
+							if refreshIndex == (#parameters) then  updateForm=true end
+						end										
+				end
+				
+			end	
+
+		elseif resetFlag then																	-- RxReset encountered
+
+			-- disable fields here
+				
+
+				for i=1,#parameters do
+					if fields[i] ~= nil then fields[i]:enable(false) end
+				end
+				if getTime() > nextWrite then
+					if Rx_Reset[resetcounter] ~= CHAN_Mapping then
+						local value = RxField[Rx_Reset[resetcounter]].SPortdefault
+						if debug2 then print("pushreset",resetcounter,APP_ID,string.format("%x",value)) end
+						widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})
+						nextWrite = getTime() + writeInterval
+						resetcounter = resetcounter+1
+					else																			-- channel map handler
+						for i = 0, 15 do
+							chMap[i+1] = i+1														-- Sport 0..15 // formValues & index: 1..16 
+							local value =  i*65536 + i*256 + 0xE9  									-- workaround missing bit32lib bor: Byte3..1   value:channel:item
+								nextWrite = getTime() + writeInterval
+								widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})				
+								if debug2 then print("pushreset Channel",i,string.format("%x",value)) end
+																					-- don't flood Sport:
+							::loopCh::
+								if getTime() > nextWrite then
+									goto breakCh
+								else
+									goto loopCh
+								end
+							::breakCh::
+						end	
+						resetcounter = resetcounter+1												-- reset channel mapping finished
+					end
+					
+					if resetcounter > #Rx_Reset then												-- reset finished ?
+						resetcounter = 1															-- >> reset counter
+						resetFlag = false															-- >> reset flag
+						updateForm = true															-- initiate page refresh
+						refreshIndex = 0
+						built_para()
+						if debug2 then print("reset finished success") end
+					end
+				end
+			
+		else																			-- no request & no startup sequence in progress determined
+				if #modifications > 0 then																		-- maybe new data to be written / "write request" ?
+					local j = 0
+					for j = 1,#modifications do
+						widget.sensor:pushFrame({primId=0x31, appId=APP_ID,value=modifications[j][2]})				-- send data
+						modifications[j] = nil
+						print("1660 write",string.format("%x",value))
+					end
+					refreshIndex = 0																			-- reset index so new "read all" initiated
+					requestInProgress = false																	-- reset request status
+																		-- reset mod
+					--print("1158 write",string.format("%x",modifications[1][2]))
+					print("1660 write",string.format("%x",value))
+
+				elseif refreshIndex < (#parameters ) then														-- no write request, maybe read request ?
+					local dItem
+					local parameter = parameters[refreshIndex + 1]
+					if parameter[1] == PAGESTRG  or (PageActual == 1 and refreshIndex == 1 ) then				-- exclude header & info lines: nothing todo
+						--	refreshIndex = 1																	-- jmp to second entry
+						refreshIndex = refreshIndex +1
+					else
+						dItem = parameter[3]
+						if dItem == RxField[CHAN_Mapping].d_item then
+							if debug2 then print(" WAKEUP:   channelrequest",dItem) end
+							dItem = dItem + (formPage[PageActual][refreshIndex + 1].chNum -1)*256
+						end
+						if debug2 then print(" WAKEUP:   refreshIndex < Num Parameters, Polling ",string.format("%X",dItem),refreshIndex+1) end
+						if widget.sensor:pushFrame({primId=0x30, appId=APP_ID,value= dItem }) == true then			-- send read request
+							requestInProgress = true																-- activate read request loop !!!
+							telemetryPopTimeout = getTime() + SPORTtimeout												-- set timeout
+							pollDelay = getTime() +2/10																-- set delay until response can be expected
+							if debug2 then print(" WAKEUP:   polled successfull ",string.format("%X",dItem)) end
+						else
+							if debug2 then print(" WAKEUP:   poll returned false ",string.format("%X",dItem)) end
+						end
+					end
+				elseif refreshIndex == #parameters and  updateForm	then											-- all items on page were read, so update page if new page was called
+					if debug2 then print(" WAKEUP:   ++++++++++++++++     paint new page  ++++++++++++++++",PageActual,refreshIndex ) end
+					lcd.invalidate()
+				end
+
+		end
+	end
+
 end
 
 
@@ -1158,10 +1786,11 @@ local function event(widget, category, value, x, y,sensor)
 			--widget.sensor:idle(false)
 
 	else
-		if not (requestInProgress or (#modifications > 0) or  resetFlag) then
+		print("pg up:",KEY_PAGE_UP ,"down:",KEY_PAGE_DOWN,not (requestInProgress or (#modifications > 0) or  resetFlag) )
+		if not (requestInProgress or (#modifications > 0) or  resetFlag) then --ACTION
 
---			if refreshIndex >= #parameters then										--prevent Sport handling disruption
-				--if value == KEY_PAGE_UP or value == 96 then											--  page up button
+			if refreshIndex >= #parameters then										--	prevent Sport handling disruption
+				--if value == KEY_PAGE_UP or value == 96 then							--  page up button	---ACTION TOGGLE
 				if value == KEY_PAGE_UP  then	
 					print(".<<<<<<<< BACK")
 					local forward = false
@@ -1173,11 +1802,11 @@ local function event(widget, category, value, x, y,sensor)
 					turnPage(forward )
 					print(">>>>>>>> FWD")
 				end
---			end
+			end																	--end ACTION
 		end			--]]
 	end
-	--return
-	return false
+	return
+--	return false
 end
 
 
