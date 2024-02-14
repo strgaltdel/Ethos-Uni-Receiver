@@ -15,9 +15,13 @@ uniSet:  configure parameters
 unistat:  show statistics widget
 
 
+
 Feb24:
+
 added FBUS support
+
 added several receiver types
+
 rx dependent options
 
 
