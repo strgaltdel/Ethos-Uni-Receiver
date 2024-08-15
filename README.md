@@ -4,7 +4,7 @@
   
 <br/><br/>
 
-## Due to Ethos changes in forms handling, you'll need Uni activate/setup Release 2.x in case you're running Ethos 1.5.12 or higher ! ##
+## Due to Ethos changes in forms handling, you'll need Uni activate/setup luas in Release 2.x in case you're running Ethos 1.5.12 or higher ! ##
   
 <br/><br/>  
   
