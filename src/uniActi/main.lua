@@ -44,7 +44,7 @@ local txlan
 	end
 
 
-local translations = {en="UNI-Activate 1.0"}
+local translations = {en="UNI-Activate 2.0 beta-B"}
 
 local function name(widget)						-- name script
   local locale = system.getLocale()
@@ -66,7 +66,7 @@ local debug0 <const> 		= false			-- debug level 0, basic
 local debug1 <const> 		= false			-- monitor check for poll
 local debug2 <const> 		= true			-- monitor poll	
 --ocal debug2 <const> 		= false			-- monitor poll	
-local debug3 <const> 		= false			-- set variable
+local debug3 <const> 		= true		-- set variable
 local debug4 <const> 		= false			-- get variable
 local debug5 <const> 		= false			-- monitor UID finished
 local debug6 <const> 		= false			-- true
@@ -102,8 +102,9 @@ local SENDRxITM3 <const> 	= 103
 local SENDRxMAX <const> 	= 104
 
 local PREFIX1 <const> 	= "           "	-- used by some txt fields to shift chars
-local CodeSTD <const> 	= "000000"		-- Standard Code at begin
---local CodeSTD <const> 	= "DE72F9"
+--local CodeSTD <const> 	= "000000"		-- Standard Code at begin
+--local CodeSTD <const> 	= "DE72F9"		-- tst mini 
+local CodeSTD <const> 	= "09B7A7"			-- tst x8
 
 local frame = {}							-- Sport frame data items
 local fields = {}							-- active formfield array
@@ -297,33 +298,35 @@ end
 																			-- ********************************************************************
 
 
-local function setValue(parameter, value)													-- corresponding MB "changesetup" function
+local function set_Val(parameter, value)													-- corresponding MB "changesetup" function
+	print("302 setVal was called")
 	local newValue
 	local newFormValue
 	local rxPointer = rxIndex(parameter)
 	
 	if debug3 then print("POINTER (set)",rxPointer)end
-		FormLine[rxPointer].value = value												-- cache value in case of page up/dwn
-		if rxPointer == uniCode then
-			local len =string.len(value)
-			if  not(len==6)   or  (string.match( value, "^%x%x%x%x%x%x$" ) == nil) then
-				if debug3 then print("invalid code")end
-				--newFormValue = "AAAAAA"
-				newFormValue = value
-				parameters[VALIDATION ][3] = PREFIX1..txt.codeInval[txlan]	
-				parameter[4] = newFormValue
-				updateForm = true
 
-			else
-				parameters[VALIDATION ][3] = PREFIX1..txt.codevalid[txlan]
-				parameter[4]=value	
-				FormLine[uniCode ].value = value				
-				if debug3 then print ("Code OK",value) end		
-				updateForm = true				
-			end		
-		elseif rxPointer == Save then
-			flagWrite = true
-			if debug3 then print ("press save detected",value) end		
+	FormLine[rxPointer].value = value												-- cache value in case of page up/dwn
+	if rxPointer == uniCode then
+		local len =string.len(value)
+		if  not(len==6)   or  (string.match( value, "^%x%x%x%x%x%x$" ) == nil) then
+			if debug3 then print("invalid code")end
+			--newFormValue = "AAAAAA"
+			newFormValue = value
+			parameters[VALIDATION ][3] = PREFIX1..txt.codeInval[txlan]	
+			parameter[4] = newFormValue
+			updateForm = true
+
+		else
+			parameters[VALIDATION ][3] = PREFIX1..txt.codevalid[txlan]
+			parameter[4]=value	
+			FormLine[uniCode ].value = value				
+			if debug3 then print ("Code OK",value) end		
+			updateForm = true				
+		end		
+	elseif rxPointer == Save then
+		flagWrite = true
+		if debug3 then print ("press save detected",value) end		
 	end		
 	
 	return(FormLine[rxPointer].value)
@@ -333,58 +336,24 @@ end
 																			-- ***		    create new form line   	*** 
 																			-- ***         return new "field line"		***
 																			-- ************************************************
-															
-local function createNumberField(line, parameter)
-	local field = form.addNumberField(line, nil, parameter[7], parameter[8], function() return getValue(parameter) end, function(value) setValue(parameter, value) end)
-	field:enableInstantChange(false)
-	if parameter[5] ~= 0 then 									-- if write enabled >>
-		field:enable(true)
-	else
-		field:enable(false)
-	end
-	return field
-end
-
-
-
-local function createBooleanField(line, parameter)
-	local field = form.addBooleanField(line, nil, function() return getValue(parameter) end, function(value) setValue(parameter, value) end)
-	if parameter[5] ~= 0  then 									-- if write enabled >>
-		field:enable(true)
-	else
-		field:enable(false)
-	end
-	return field
-end
-
-
-
-local function createChoiceField(line, parameter)
-   local field = form.addChoiceField(line, nil, parameter[7], function() return getValue(parameter) end, function(value) setValue(parameter, value) end)
-	if parameter[5] ~= 0  then 									-- if write enabled >>
-		field:enable(true)
-	else
-		field:enable(false)
-	end
-  return field
-end
 
 
 
 local function createTextButton(line, parameter)
- -- local field = form.addTextButton(line, nil, parameter[4], function() return setValue(parameter, 0) end)
-  local field = form.addTextButton(line, nil, "Save", function() return setValue(parameter, "Save") end)
-  return field
+	 local field = form.addButton(line, nil, {text="Save", icon = nil, paint = function() end, press = function()  return  set_Val(parameter, "Save") end})
+	 return field
 end
 
+
 local function createTextEdit(line,parameter,inx)
-  local field = form.addTextField(line, nil,  function() return parameter[4] end, function(newValue) setValue(parameter, newValue) end)
+	local field = form.addTextField(line, nil,  function() return parameter[4] end, function(newValue) print("391 call setCode") set_Val(parameter,newValue) end)
+--  local field = form.addTextField(line, nil,  function() return parameter[4] end, function(newValue) print("391 call setCode") set_Val(parameter, newValue) end)
   return field
 end
 
 local function createTextStat(line,parameter,inx)
 	local txt = parameter[3]
-	field = form.addStaticText(line, nil,txt,RIGHT)
+	local field = form.addStaticText(line, nil,txt,RIGHT)
   return field
 end
 
@@ -445,20 +414,7 @@ local function paint(widget)
 	if widget.intro.active  then													-- prep for splash screen / intro
 		splash(widget)	
 	else
-		if updateForm then
-			print("finished print new form")	-- new page ?
-			if refreshPage() == false then													-- channel mapping disabled				-- if not, dependencies encountert, so no channel mapping
-				widget.var.PageMax = 2																-- disable mapping pages
-				if PageLast == 1 then														-- refresh
-					widget.var.PageActual =2														
-				else
-					widget.var.PageActual = 1
-				end
-				refreshPage()															-- built next page
-			end
-		end
-		updateForm = false																-- reset update flag
-		if debug0 then print("finished print new form") end
+
 	end
 end
 
@@ -777,7 +733,7 @@ local function wakeup(widget)
 			widget.handler= readPolledItem(widget)
 			
 		elseif widget.handler >= SENDRxMIN and widget.handler < SENDRxMAX	 then									-- write unlock Code		
-			if parameters[VALIDATION ][3] == PREFIX1..txt.codeInval[txlan]	then									-- wrong Syntax (use same strings as in setvalue !!)
+			if parameters[VALIDATION ][3] == PREFIX1..txt.codeInval[txlan]	then									-- wrong Syntax (use same strings as in set_Val !!)
 				print("sorry, no code was send due to wrong syntax")
 				widget.handler =  IDLE
 			else
@@ -785,6 +741,21 @@ local function wakeup(widget)
 				widget.handler = write_Unlock(FormLine[uniCode].value ,widget)
 			end	
 		end
+
+		if updateForm then
+			print("finished print new form")	-- new page ?
+			if refreshPage() == false then													-- channel mapping disabled				-- if not, dependencies encountert, so no channel mapping
+				widget.var.PageMax = 2																-- disable mapping pages
+				if PageLast == 1 then														-- refresh
+					widget.var.PageActual =2														
+				else
+					widget.var.PageActual = 1
+				end
+				refreshPage()															-- built next page
+			end
+		end
+		updateForm = false																-- reset update flag
+		if debug0 then print("finished print new form") end
 		lcd.invalidate()
 	end
 
