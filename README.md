@@ -13,11 +13,21 @@ uniSet:  configure parameters
 
 unistat:  show statistics widget
 
+
+2024 Aug:
+
+adoption for newer Ethos releases
+
+#### Uni 2.0 needs at least Ethos 1.5.12 ! ####
+
+Uni 1.x tested until Ethos 1.5.9
+
+Ethos 1.5.10/1.5.11 not supported
+
   
   
   
-  
-Feb24:
+2024 Feb:
 
 added FBUS support
 
