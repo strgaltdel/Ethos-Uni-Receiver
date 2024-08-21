@@ -44,7 +44,7 @@
 			beta 1.3    resolve paging bug
 			beta 1.4 	resolve "no d8 sbus uninvert" parameter , no foo-fighter  on changing page
 
-		2.0 		240814   support Ethos > 1.5.9
+		2.0 		240814   support Ethos >= 1.5.12
 *************************************************************************************  								
 
 
@@ -66,6 +66,9 @@ some more hints:
 --]]
 
 
+-- test / sim mode
+local modeSim = false
+-- local modeSim = true
 
 
 
@@ -77,9 +80,9 @@ local function name(widget)					-- name script
   return translations[locale] or translations["en"]
 end
 
-local modeSim = false
 
-local SPORTtimeout = 0.1				--  timeout for sport push (sec)  // sim mode
+
+local SPORTtimeout = 0.2			--  timeout for sport push (sec)  // sim mode
 
 if not(modeSim) then 
 	SPORTtimeout = 1.4					-- operative mode
@@ -88,10 +91,10 @@ end
 
 local debug0 <const> 		= false		-- debug level 0, basic
 local debug1 <const> 		= false		-- monitor sport2form
-local debug2 <const> 		= false		-- monitor wakeup
+local debug2 <const> 		= true		-- monitor wakeup
 local debug3 <const> 		= false		-- dishandler_set
 local debug4 <const> 		= false		-- get variable
-local debug5 <const> 		= false		-- set variable
+local debug5 <const> 		= true		-- set variable
 local debug6 <const> 		= false	-- form line create
 local debug7 <const> 		= false		-- page 2 "dyn" line built
 
@@ -723,7 +726,7 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 	local newValue
 	local rxPointer = rxIndex(parameter)
 	local returnVal
-	if debug5 then print("..690 enter setval",parameter[1],"para6:", parameter[6],"pointer:",rxPointer ,parameter[4],value) end
+	if debug5 then print("..729 enter setval",parameter[1],"para6:", parameter[6],"pointer:",rxPointer ,parameter[4],value) end
 	
 	if 	string.sub(parameter[1],1,3) == "Ch " then										-- probe channel field
 		local ChanNum = tonumber(string.sub(parameter[1],4,5))							-- extract channel number
@@ -748,7 +751,7 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 				newValue = 0x01E0
 			end
 			modifications[1] = {parameter[3], newValue}										-- set {dataitem,value} for wakeup processing
-			if debug5 then print ("set channelblock detected",string.format("%x",newValue)) end
+			if debug5 then print ("754 set channelblock detected",string.format("%x",newValue)) end
 
 			
 		elseif rxPointer == PWM_on_SBUS then		
@@ -758,7 +761,7 @@ local function setValue(parameter, value)													-- corresponding MB "chang
 				newValue = 0x01E2
 			end
 			modifications[1] = {parameter[3], newValue}	
-			if debug5 then print ("set ServoOnSbus detected",string.format("%x",newValue)) end
+			if debug5 then print ("764 set ServoOnSbus detected",string.format("%x",newValue)) end
 
 			
 		elseif rxPointer == Tune_enable then
@@ -1056,6 +1059,9 @@ local function newform()
 		if PageActual == 1 and index==2 then											-- detect line "INFO" using name
 	--		print("954 run info ")
 			fields[index]:enable(false)													-- ensure disabled
+		elseif modeSim then
+			print("1060 enable fields in sim mode")
+			pcall(function() fields[index]:enable(true)	return end)												-- enable all in test / sim mode
 		end
 	end
 --	print("FIELDS finished")
@@ -1474,6 +1480,7 @@ local function wakeup(widget)
 		
 
 		if modeSim and introHandler < 10 then 					-- simulate read header/intro data
+			print("1477 simulate data")
 			widget.receiver = RecLookup(2)
 			widget.protocol = protoLookup(1)
 			widget.revision = 80
@@ -1491,7 +1498,7 @@ local function wakeup(widget)
 
 
 			introHandler = 99
-		elseif introHandler < 10 then									-- get header / intro data: rx Type, protocol & FW revision
+		elseif not(modeSim) and introHandler < 10 then									-- get header / intro data: rx Type, protocol & FW revision
 																										-- get header infos on start
 			if 	introHandler == 0 then								-- poll receiver Info
 					print("1221 poll receiver type")
@@ -1601,169 +1608,173 @@ local function wakeup(widget)
 			end
 
 		
-		else																						-- header infos available, so proceed:
-			lcd.invalidate()
-			if requestInProgress then	
-				if parameters[refreshIndex + 1] == 2 and PageActual == 1 then					-- infoline, data was received during intro, so jump..
-					refreshIndex = refreshIndex + 1	
-				else	
-					
-				--	local retVal = wait4items(widget,reqItem)
-					
-								-- request active ?
-					frame = widget.sensor:popFrame(widget)
-					if frame ~= nil then
-						local value = frame:value()						
-						local appl_id=frame:appId()						
+		elseif not(modeSim) then																						-- header infos available, so proceed:
+			lcd.invalidate()	 
+				if requestInProgress then	
+					if parameters[refreshIndex + 1] == 2 and PageActual == 1 then					-- infoline, data was received during intro, so jump..
+						refreshIndex = refreshIndex + 1	
+					else	
+						
+					--	local retVal = wait4items(widget,reqItem)
+						
+									-- request active ?
+						frame = widget.sensor:popFrame(widget)
+						if frame ~= nil then
+							local value = frame:value()						
+							local appl_id=frame:appId()						
 
-							local fieldId
-							if value % 256	== 0xFF then												-- extracted dataitem from package Rx "Stst" item
-								if value >  parameters[refreshIndex + 1][3] then						-- ditem rx Protocol/type  is 2 byte
-									fieldId = value&0xFFFF
+								local fieldId
+								if value % 256	== 0xFF then												-- extracted dataitem from package Rx "Stst" item
+									if value >  parameters[refreshIndex + 1][3] then						-- ditem rx Protocol/type  is 2 byte
+										fieldId = value&0xFFFF
+									end
+									if debug2 then print(" WAKEUP:   Frame got RawValue", string.format("%X",value),fieldId) end
+								else
+									fieldId = value % 256
 								end
-								if debug2 then print(" WAKEUP:   Frame got RawValue", string.format("%X",value),fieldId) end
-							else
-								fieldId = value % 256
-							end
-							local parameter = parameters[refreshIndex + 1]								-- get corresponding form data
-							if fieldId == parameter[3] then												-- received dataItem = requested item ?
-								local value2=value
-								value = math.floor(value / 256)											-- extract value from package
-							
-								local rxPointer = rxIndex(parameter)
-								parameters[refreshIndex + 1][4] = sport2form(value2,fieldId,parameter,rxPointer,widget)
-								if debug2 then print(" WAKEUP:   1552 could read", parameters[refreshIndex + 1][1],parameters[refreshIndex + 1][4],value) end			-- print lineName & value
-								-- set parameter from value
-								if value ~= nil  then 
+								local parameter = parameters[refreshIndex + 1]								-- get corresponding form data
+								if fieldId == parameter[3] then												-- received dataItem = requested item ?
+									local value2=value
+									value = math.floor(value / 256)											-- extract value from package
 								
-									if RxField[rxPointer].write_ == 1 then													-- stage 1 enable field edit if defined
-																																					-- enable edit mode
-											if debug2 then print(" WAKEUP:   enable", RxField[rxPointer].name) end
-											if fields[refreshIndex + 1] ~= nil then
-												fields[refreshIndex + 1]:enable(true)	
-											end	
-										
-									elseif RxField[rxPointer].write_> 1 then
-											local enableStatus = dishandler_get(parameter,rxPointer)
-											if debug2 then print(" WAKEUP:   enable returned ", parameter[1],enableStatus) end
-											--print("1006",refreshIndex + 1)
-											fields[refreshIndex + 1]:enable(enableStatus)
-									else
-											if debug2 then print(" WAKEUP:   disable", RxField[rxPointer].name) end
-											fields[refreshIndex + 1]:enable(false)					
-									end
-									refreshIndex = refreshIndex + 1											-- prepare to get next item
+									local rxPointer = rxIndex(parameter)
+									parameters[refreshIndex + 1][4] = sport2form(value2,fieldId,parameter,rxPointer,widget)
+									if debug2 then print(" WAKEUP:   1552 could read", parameters[refreshIndex + 1][1],parameters[refreshIndex + 1][4],value) end			-- print lineName & value
+									-- set parameter from value
+									if value ~= nil  then 
 									
-									if debug2 then print("\n\n\n*************************************************") end										
-								end
-
-								if (refreshIndex + 1)	<= (#parameters) and formPage[PageActual][refreshIndex + 1].pointer == RxReset then		-- filter some fields for Sport handling, here: RxReset
-									refreshIndex = refreshIndex + 1	
-									if debug2 then print(" WAKEUP:   RxReset detected") end							
-								end
-								--if refreshIndex == (#parameters) then  updateForm=true end			-- last item, so enable update form;  would disable all after andreas change..
-								requestInProgress = false												-- active request loop "closed"
-							end
-						
-					else
-							if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
-								if debug2 then print(" WAKEUP:      ------------    SPort timeout  --------------") end
-								requestInProgress = false	
-								telemetryPopTimeout = 0
-								modifications[1] = nil	
-								refreshIndex = refreshIndex + 1				-- next field
-								if refreshIndex == (#parameters) then  updateForm=true end
-							end										
-					end
-					
-				end	
-
-			elseif resetFlag then																	-- RxReset encountered
-
-				-- disable fields here
-					
-
-					for i=1,#parameters do
-						if fields[i] ~= nil then fields[i]:enable(false) end
-					end
-					if getTime() > nextWrite then
-						if Rx_Reset[resetcounter] ~= CHAN_Mapping then
-							local value = RxField[Rx_Reset[resetcounter]].SPortdefault
-							if debug2 then print("pushreset",resetcounter,APP_ID,string.format("%x",value)) end
-							widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})
-							nextWrite = getTime() + writeInterval
-							resetcounter = resetcounter+1
-						else																			-- channel map handler
-							for i = 0, 15 do
-								chMap[i+1] = i+1														-- Sport 0..15 // formValues & index: 1..16 
-								local value =  i*65536 + i*256 + 0xE9  									-- workaround missing bit32lib bor: Byte3..1   value:channel:item
-									nextWrite = getTime() + writeInterval
-									widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})				
-									if debug2 then print("pushreset Channel",i,string.format("%x",value)) end
-																						-- don't flood Sport:
-								::loopCh::
-									if getTime() > nextWrite then
-										goto breakCh
-									else
-										goto loopCh
+										if RxField[rxPointer].write_ == 1 then													-- stage 1 enable field edit if defined
+																																						-- enable edit mode
+												if debug2 then print(" WAKEUP:   enable", RxField[rxPointer].name) end
+												if fields[refreshIndex + 1] ~= nil then
+													fields[refreshIndex + 1]:enable(true)	
+												end	
+											
+										elseif RxField[rxPointer].write_> 1 then
+												local enableStatus = dishandler_get(parameter,rxPointer)
+												if debug2 then print(" WAKEUP:   enable returned ", parameter[1],enableStatus) end
+												--print("1006",refreshIndex + 1)
+												fields[refreshIndex + 1]:enable(enableStatus)
+										else
+												if debug2 then print(" WAKEUP:   disable", RxField[rxPointer].name) end
+												fields[refreshIndex + 1]:enable(false)					
+										end
+										refreshIndex = refreshIndex + 1											-- prepare to get next item
+										
+										if debug2 then print("\n\n\n*************************************************") end										
 									end
-								::breakCh::
-							end	
-							resetcounter = resetcounter+1												-- reset channel mapping finished
+
+									if (refreshIndex + 1)	<= (#parameters) and formPage[PageActual][refreshIndex + 1].pointer == RxReset then		-- filter some fields for Sport handling, here: RxReset
+										refreshIndex = refreshIndex + 1	
+										if debug2 then print(" WAKEUP:   RxReset detected") end							
+									end
+									--if refreshIndex == (#parameters) then  updateForm=true end			-- last item, so enable update form;  would disable all after andreas change..
+									requestInProgress = false												-- active request loop "closed"
+								end
+							
+						else
+								if getTime() > telemetryPopTimeout then										-- timeout ?  >> reset request
+									if debug2 then print(" WAKEUP:      ------------    SPort timeout  --------------") end
+									requestInProgress = false	
+									telemetryPopTimeout = 0
+									modifications[1] = nil	
+									refreshIndex = refreshIndex + 1				-- next field
+									if refreshIndex == (#parameters) then  updateForm=true end
+								end										
 						end
 						
-						if resetcounter > #Rx_Reset then												-- reset finished ?
-							resetcounter = 1															-- >> reset counter
-							resetFlag = false															-- >> reset flag
-							updateForm = true															-- initiate page refresh
-							refreshIndex = 0
-							built_para()
-							if debug2 then print("reset finished success") end
-						end
-					end
-				
-			else																			-- no request & no startup sequence in progress determined
-					if #modifications > 0 then																		-- maybe new data to be written / "write request" ?
-						local j = 0
-						for j = 1,#modifications do
-							widget.sensor:pushFrame({primId=0x31, appId=APP_ID,value=modifications[j][2]})				-- send data
-							modifications[j] = nil
-							print("1660 write",string.format("%x",value))
-						end
-						refreshIndex = 0																			-- reset index so new "read all" initiated
-						requestInProgress = false																	-- reset request status
-																			-- reset mod
-						--print("1158 write",string.format("%x",modifications[1][2]))
-						print("1660 write",string.format("%x",value))
+					end	
 
-					elseif refreshIndex < (#parameters ) then														-- no write request, maybe read request ?
-						local dItem
-						local parameter = parameters[refreshIndex + 1]
-						if parameter[1] == PAGESTRG  or (PageActual == 1 and refreshIndex == 1 ) then				-- exclude header & info lines: nothing todo
-							--	refreshIndex = 1																	-- jmp to second entry
-							refreshIndex = refreshIndex +1
-						else
-							dItem = parameter[3]
-							if dItem == RxField[CHAN_Mapping].d_item then
-								if debug2 then print(" WAKEUP:   channelrequest",dItem) end
-								dItem = dItem + (formPage[PageActual][refreshIndex + 1].chNum -1)*256
+				elseif resetFlag then																	-- RxReset encountered
+
+					-- disable fields here
+						
+
+						for i=1,#parameters do
+							if fields[i] ~= nil then fields[i]:enable(false) end
+						end
+						if getTime() > nextWrite then
+							if Rx_Reset[resetcounter] ~= CHAN_Mapping then
+								local value = RxField[Rx_Reset[resetcounter]].SPortdefault
+								if debug2 then print("pushreset",resetcounter,APP_ID,string.format("%x",value)) end
+								widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})
+								nextWrite = getTime() + writeInterval
+								resetcounter = resetcounter+1
+							else																			-- channel map handler
+								for i = 0, 15 do
+									chMap[i+1] = i+1														-- Sport 0..15 // formValues & index: 1..16 
+									local value =  i*65536 + i*256 + 0xE9  									-- workaround missing bit32lib bor: Byte3..1   value:channel:item
+										nextWrite = getTime() + writeInterval
+										widget.sensor:pushFrame({primId=0x31, appId=APP_ID, value=value})				
+										if debug2 then print("pushreset Channel",i,string.format("%x",value)) end
+																							-- don't flood Sport:
+									::loopCh::
+										if getTime() > nextWrite then
+											goto breakCh
+										else
+											goto loopCh
+										end
+									::breakCh::
+								end	
+								resetcounter = resetcounter+1												-- reset channel mapping finished
 							end
-							if debug2 then print(" WAKEUP:   refreshIndex < Num Parameters, Polling ",string.format("%X",dItem),refreshIndex+1) end
-							if widget.sensor:pushFrame({primId=0x30, appId=APP_ID,value= dItem }) == true then			-- send read request
-								requestInProgress = true																-- activate read request loop !!!
-								telemetryPopTimeout = getTime() + SPORTtimeout												-- set timeout
-								pollDelay = getTime() +2/10																-- set delay until response can be expected
-								if debug2 then print(" WAKEUP:   polled successfull ",string.format("%X",dItem)) end
+							
+							if resetcounter > #Rx_Reset then												-- reset finished ?
+								resetcounter = 1															-- >> reset counter
+								resetFlag = false															-- >> reset flag
+								updateForm = true															-- initiate page refresh
+								refreshIndex = 0
+								built_para()
+								if debug2 then print("reset finished success") end
+							end
+						end
+					
+				else																			-- no request & no startup sequence in progress determined
+						if #modifications > 0 then																		-- maybe new data to be written / "write request" ?
+							local j = 0
+							for j = 1,#modifications do
+								widget.sensor:pushFrame({primId=0x31, appId=APP_ID,value=modifications[j][2]})				-- send data
+								print("1736 write item",j)
+							--	print("1737 write value",string.format("%x",modifications[j][2]))
+								print("1737 write value",modifications[j][2])											-- error << nil ??
+								modifications[j] = nil
+							end
+							refreshIndex = 0																			-- reset index so new "read all" initiated
+							requestInProgress = false																	-- reset request status
+																				-- reset mod
+							--print("1158 write",string.format("%x",modifications[1][2]))
+						--	print("1660 write",string.format("%x",value))
+
+						elseif refreshIndex < (#parameters ) then														-- no write request, maybe read request ?
+							local dItem
+							local parameter = parameters[refreshIndex + 1]
+							if parameter[1] == PAGESTRG  or (PageActual == 1 and refreshIndex == 1 ) then				-- exclude header & info lines: nothing todo
+								--	refreshIndex = 1																	-- jmp to second entry
+								refreshIndex = refreshIndex +1
 							else
-								if debug2 then print(" WAKEUP:   poll returned false ",string.format("%X",dItem)) end
+								dItem = parameter[3]
+								if dItem == RxField[CHAN_Mapping].d_item then
+									if debug2 then print(" WAKEUP:   channelrequest",dItem) end
+									dItem = dItem + (formPage[PageActual][refreshIndex + 1].chNum -1)*256
+								end
+								if debug2 then print(" WAKEUP:   refreshIndex < Num Parameters, Polling ",string.format("%X",dItem),refreshIndex+1) end
+								if widget.sensor:pushFrame({primId=0x30, appId=APP_ID,value= dItem }) == true then			-- send read request
+									requestInProgress = true																-- activate read request loop !!!
+									telemetryPopTimeout = getTime() + SPORTtimeout												-- set timeout
+									pollDelay = getTime() +2/10																-- set delay until response can be expected
+									if debug2 then print(" WAKEUP:   polled successfull ",string.format("%X",dItem)) end
+								else
+									if debug2 then print(" WAKEUP:   poll returned false ",string.format("%X",dItem)) end
+								end
 							end
+						elseif refreshIndex == #parameters and  updateForm	then											-- all items on page were read, so update page if new page was called
+							if debug2 then print(" WAKEUP:   ++++++++++++++++     paint new page  ++++++++++++++++",PageActual,refreshIndex ) end
+							lcd.invalidate()
 						end
-					elseif refreshIndex == #parameters and  updateForm	then											-- all items on page were read, so update page if new page was called
-						if debug2 then print(" WAKEUP:   ++++++++++++++++     paint new page  ++++++++++++++++",PageActual,refreshIndex ) end
-						lcd.invalidate()
-					end
 
-			end
+				end
+		else			-- modesim in std wakeup loop
+			--print("1722 wakeup modesim ")
 		end
 
 		if updateForm then																-- new page ?
